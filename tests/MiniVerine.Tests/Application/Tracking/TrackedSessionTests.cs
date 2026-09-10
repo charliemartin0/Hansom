@@ -226,11 +226,16 @@ public sealed class TrackedSessionTests
     }
 
     [Fact]
-    public async Task untracked_publish_of_an_immediate_message_still_throws()
+    public async Task untracked_publish_of_an_immediate_message_enqueues_without_a_worker()
     {
-        IMessageBus bus = new MiniVerine.Application.Mediator.Mediator(new HandlerCatalog());
+        var enqueuer = new RecordingEnqueuer();
+        IMessageBus bus = new MiniVerine.Application.Mediator.Mediator(
+            new HandlerCatalog(),
+            enqueuer: enqueuer);
 
-        await Assert.ThrowsAsync<NotSupportedException>(() => bus.PublishAsync(new ChargePayment(1)));
+        await bus.PublishAsync(new ChargePayment(1));
+
+        Assert.IsType<ChargePayment>(Assert.Single(enqueuer.Enqueued).Message.Value);
     }
 
     [Fact]
@@ -309,6 +314,13 @@ public sealed class TrackedSessionTests
         var policies = new ErrorPolicyCatalog();
         policies.OnException<TimeoutException>().Retry().Retry();
         return new MiniVerine.Application.Mediator.Mediator(catalog, policies: policies);
+    }
+
+    private sealed class RecordingEnqueuer : IPublishEnqueuer
+    {
+        public List<Envelope> Enqueued { get; } = [];
+
+        public void Enqueue(Envelope envelope) => Enqueued.Add(envelope);
     }
 }
 

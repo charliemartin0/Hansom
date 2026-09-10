@@ -163,14 +163,20 @@ public sealed class MessageSchedulerTests
     }
 
     [Fact]
-    public async Task publish_zero_delay_timeout_is_still_immediate_and_unsupported()
+    public async Task publish_zero_delay_timeout_enqueues_immediately()
     {
         var hold = new InMemoryScheduledEnvelopeHold();
-        IMessageBus bus = new MiniVerine.Application.Mediator.Mediator(new HandlerCatalog(), hold: hold);
+        var enqueuer = new RecordingPublishEnqueuer();
+        IMessageBus bus = new MiniVerine.Application.Mediator.Mediator(
+            new HandlerCatalog(),
+            hold: hold,
+            enqueuer: enqueuer);
 
-        await Assert.ThrowsAsync<NotSupportedException>(
-            () => bus.PublishAsync(new OrderTimeout(1), new DeliveryOptions { Delay = TimeSpan.Zero }));
+        await bus.PublishAsync(new OrderTimeout(1), new DeliveryOptions { Delay = TimeSpan.Zero });
+
         Assert.Empty(hold.Peek());
+        Envelope envelope = Assert.Single(enqueuer.Enqueued);
+        Assert.IsType<OrderTimeout>(envelope.Message.Value);
     }
 
     [Fact]
@@ -199,6 +205,13 @@ public sealed class MessageSchedulerTests
         public List<object> Published { get; } = [];
 
         public void Publish(IReadOnlyList<object> outgoing) => Published.AddRange(outgoing);
+    }
+
+    private sealed class RecordingPublishEnqueuer : IPublishEnqueuer
+    {
+        public List<Envelope> Enqueued { get; } = [];
+
+        public void Enqueue(Envelope envelope) => Enqueued.Add(envelope);
     }
 }
 

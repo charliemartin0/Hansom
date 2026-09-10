@@ -2,6 +2,7 @@ using MiniVerine.Application.Bus;
 using MiniVerine.Application.Cascades;
 using MiniVerine.Application.Discovery;
 using MiniVerine.Application.Execution;
+using MiniVerine.Application.Routing;
 using MiniVerine.Application.Sagas;
 using MiniVerine.Application.Scheduling;
 using MiniVerine.Application.Tracking;
@@ -18,10 +19,14 @@ public sealed class Mediator : IMessageBus
 {
     private static readonly AsyncLocal<bool> InHandler = new();
 
+    private static readonly Destination InvokeDestination = new(new Uri("local://invoke/"));
+
     private readonly Executor _executor;
     private readonly OutgoingDispatcher _dispatcher;
     private readonly ISagaStore _sagas;
     private readonly MessageScheduler _scheduler;
+    private readonly RoutingCatalog _routing;
+    private readonly IPublishEnqueuer _enqueuer;
     private readonly Queue<(object Body, Envelope Parent)> _worklist = [];
     private readonly object _trackGate = new();
 
@@ -36,10 +41,14 @@ public sealed class Mediator : IMessageBus
         Executor? executor = null,
         IScheduledEnvelopeHold? hold = null,
         ISagaStore? sagas = null,
-        ErrorPolicyCatalog? policies = null)
+        ErrorPolicyCatalog? policies = null,
+        RoutingCatalog? routing = null,
+        IPublishEnqueuer? enqueuer = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         Catalog = catalog;
+        _routing = routing ?? new RoutingCatalog();
+        _enqueuer = enqueuer ?? NullEnqueuer.Instance;
         IScheduledEnvelopeHold inner = hold ?? new InMemoryScheduledEnvelopeHold();
         var scheduled = new RecordingScheduledEnvelopeHold(inner, OnPark);
         _dispatcher = new OutgoingDispatcher(scheduled, cascades, OnImmediate);
@@ -82,7 +91,8 @@ public sealed class Mediator : IMessageBus
             return Task.CompletedTask;
         }
 
-        throw new NotSupportedException("PublishAsync is implemented by Routing, not Mediator.");
+        _enqueuer.Enqueue(EnvelopeForPublish(message, _routing.For(message)));
+        return Task.CompletedTask;
     }
 
     public Task<TrackedSession> InvokeTrackedAsync(
@@ -132,7 +142,7 @@ public sealed class Mediator : IMessageBus
             }
 
             _log!.Published.Add(new PublishedRecord(message));
-            Envelope envelope = EnvelopeForPublish(message);
+            Envelope envelope = EnvelopeForPublish(message, _routing.For(message));
             await DispatchHandlers(envelope, scheduled: true, cancellationToken);
             await DrainAsync(cancellationToken);
             return Freeze();
@@ -172,7 +182,7 @@ public sealed class Mediator : IMessageBus
         {
             cancellationToken.ThrowIfCancellationRequested();
             (object body, Envelope parent) = _worklist.Dequeue();
-            Envelope child = EnvelopeForDescendant(body, parent);
+            Envelope child = EnvelopeForDescendant(body, parent, _routing.For(body));
             await DispatchHandlers(child, scheduled: true, cancellationToken);
         }
     }
@@ -294,17 +304,17 @@ public sealed class Mediator : IMessageBus
             throw new DelayedInvokeNotSupported();
         }
 
-        return EnvelopeForPublish(message);
+        return EnvelopeForPublish(message, InvokeDestination);
     }
 
-    private static Envelope EnvelopeForPublish(object message)
+    private static Envelope EnvelopeForPublish(object message, Destination destination)
     {
         DateTimeOffset sent = DateTimeOffset.UtcNow;
         return new Envelope(
             new EnvelopeId(Guid.NewGuid()),
             new Message(message),
             MessageTypeNaming.For(message.GetType()),
-            new Destination(new Uri("local://invoke/")),
+            destination,
             new CorrelationId(Guid.NewGuid()),
             new ConversationId(Guid.NewGuid()),
             new SagaId(""),
@@ -316,14 +326,14 @@ public sealed class Mediator : IMessageBus
             new EnvelopeData());
     }
 
-    private static Envelope EnvelopeForDescendant(object message, Envelope parent)
+    private static Envelope EnvelopeForDescendant(object message, Envelope parent, Destination destination)
     {
         DateTimeOffset sent = DateTimeOffset.UtcNow;
         return new Envelope(
             new EnvelopeId(Guid.NewGuid()),
             new Message(message),
             MessageTypeNaming.For(message.GetType()),
-            new Destination(new Uri("local://invoke/")),
+            destination,
             parent.CorrelationId,
             parent.ConversationId,
             parent.SagaId,
@@ -344,6 +354,7 @@ public sealed class Mediator : IMessageBus
     {
         if (_log is null)
         {
+            _enqueuer.Enqueue(EnvelopeForDescendant(message, parent, _routing.For(message)));
             return;
         }
 
@@ -418,5 +429,18 @@ public sealed class Mediator : IMessageBus
         public TrackScope(Mediator mediator) => _mediator = mediator;
 
         public void Dispose() => _mediator.EndTrack();
+    }
+
+    /// <summary>
+    /// Default when no transport is configured: direct construction in tests still compiles
+    /// and PublishAsync does not throw. The composition root always supplies a real enqueuer.
+    /// </summary>
+    private sealed class NullEnqueuer : IPublishEnqueuer
+    {
+        public static readonly NullEnqueuer Instance = new();
+
+        public void Enqueue(Envelope envelope)
+        {
+        }
     }
 }
