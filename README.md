@@ -112,9 +112,11 @@ Process-manager runtime on `Invoke`. `ISagaStore` loads/saves by saga type and `
 
 Prove-with: PaymentCharged loads the same instance Start created; after complete, timeout hits `NotFound` instead of failing.
 
-### Infrastructure/Hosting (partial)
+### Infrastructure/Hosting
 
-`UseMiniVerine()` and `MiniVerineOptions` exist. The sample host starts and stops with no messages. Listeners, drain-on-stop, and handler-assembly options are still in `HostingPlan`.
+`UseMiniVerine(IHostApplicationBuilder, Action<MiniVerineOptions>?)` registers `MiniVerineOptions`, `HandlerCatalog`, `IMessageBus → Mediator`, and `MiniVerineHostedService : IHostedService` as singletons. `MiniVerineOptions.HandlerAssemblies` (`ICollection<Assembly>`) is the opt-in list for handler discovery. The console host starts and stops cleanly with no messages; `MiniVerineHostedService` is the lifecycle hook for future listeners and durability agents (LocalQueues, Persistence plug into its `StartAsync` / `StopAsync`).
+
+Prove-with: `host_with_use_miniverine_registers_miniverine_hosted_service`, `host_with_use_miniverine_registers_message_bus_as_singleton`, `host_starts_and_stops_cleanly_with_no_messages`.
 
 ## What is left
 
@@ -132,7 +134,7 @@ Folders that are **Plan-only** are listed in a sensible build order. Do one slic
 
 ### Infrastructure
 
-10. **Hosting** — `IHostedService` starts listeners / durability agents and drains on `StopAsync`.
+10. ~~**Hosting**~~ — done. Listeners and durability agents plug into `MiniVerineHostedService` from LocalQueues and Persistence.
 11. **Serialization** — Envelope body ↔ bytes using Domain/Messaging type names. Unknown CLR type is a handled failure.
 12. **LocalQueues** — in-process queues that obey Routing destinations.
 13. **Transports** — `ITransport` / endpoint ports (`local://`, later `tcp://`). Rabbit lives in `MiniVerine.RabbitMQ`.
