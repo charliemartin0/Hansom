@@ -20,7 +20,7 @@ sequenceDiagram
     participant Payments as payments queue
     participant Clock as scheduled timeout
 
-    Note over Program,Clock: Target conversation. WolverineTest today. MiniVerine Application exists (Discovery, Mediator, Execution, Scheduling, Sagas). Local queues are still planned.
+    Note over Program,Clock: Target conversation. Application kernel exists plus Infrastructure/Hosting and LocalQueues. Durable store and Helpdesk messages are still planned.
 
     Program->>Saga: Publish PlaceOrder
     Saga->>Store: commit saga and ChargePayment envelope
@@ -118,6 +118,18 @@ Prove-with: PaymentCharged loads the same instance Start created; after complete
 
 Prove-with: `host_with_use_miniverine_registers_miniverine_hosted_service`, `host_with_use_miniverine_registers_message_bus_as_singleton`, `host_starts_and_stops_cleanly_with_no_messages`.
 
+### Infrastructure/LocalQueues
+
+`Mediator.PublishAsync(message)` consults `RoutingCatalog.For(message)` (precedence: registered destination → `[LocalQueue("name")]` attribute → fallback `local://{type.Name.ToLowerInvariant()}/`) and enqueues the envelope to a per-destination `LocalQueueAgent`. The caller returns before the handler runs.
+
+`LocalQueueAgent` (Infrastructure/LocalQueues) — single-queue `Channel<Envelope>` worker with `Start` / `DrainAsync` / `Pause` / `Resume` / `Enqueue`. Invokes handlers via `Executor` with `Scheduled = true`. `Pause`/`Resume` is the circuit-breaker for the queue's listener; `DrainAsync` completes the channel and waits for the worker to finish in-flight envelopes.
+
+`LocalQueueCatalog : IPublishEnqueuer` — `ConcurrentDictionary<string, LocalQueueAgent>` keyed by destination URI; one agent per destination.
+
+`MiniVerineHostedService` starts all agents on `StartAsync` and `DrainAsync` × N on `StopAsync` so the host stops cleanly with no in-flight work dropped. Cascades from untracked `InvokeAsync` route + enqueue through the same path; tracked sessions still record to `Published` and the worklist for tests.
+
+Prove-with: `publish_async_returns_before_handle_runs`, `publish_async_dispatches_through_executor_to_discovered_handler`, `publish_async_routes_via_local_queue_attribute_to_named_queue`, `publish_async_with_no_route_falls_back_to_lowercased_type_name`, `host_stops_drain_in_flight_local_queue_work`, `local_queue_agent_pause_blocks_dispatch_until_resume`, `local_queue_catalog_creates_separate_agents_per_destination`.
+
 ## What is left
 
 Folders that are **Plan-only** are listed in a sensible build order. Do one slice at a time; prove it before starting the next.
@@ -136,7 +148,7 @@ Folders that are **Plan-only** are listed in a sensible build order. Do one slic
 
 10. ~~**Hosting**~~ — done. Listeners and durability agents plug into `MiniVerineHostedService` from LocalQueues and Persistence.
 11. **Serialization** — Envelope body ↔ bytes using Domain/Messaging type names. Unknown CLR type is a handled failure.
-12. **LocalQueues** — in-process queues that obey Routing destinations.
+12. ~~**LocalQueues**~~ — done. Bounded back-pressure, queue-invoked handler cascades, and durable mode (this folder + Persistence) are follow-ups.
 13. **Transports** — `ITransport` / endpoint ports (`local://`, later `tcp://`). Rabbit lives in `MiniVerine.RabbitMQ`.
 14. **Persistence** — inbox / outbox / dead letter / saga store ports. In-memory first; Npgsql in `MiniVerine.Postgresql`.
 15. **Observability** — OpenTelemetry exporters, not the Execution policies themselves.
