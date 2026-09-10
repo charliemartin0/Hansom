@@ -1,13 +1,22 @@
 using Microsoft.Extensions.Hosting;
+using MiniVerine.Infrastructure.LocalQueues;
 
 namespace MiniVerine.Infrastructure.Hosting;
 
 /// <summary>
-/// IHostedService that starts listeners / durability agents and drains on StopAsync.
-/// No listeners/agents exist yet, so StartAsync/StopAsync only track lifecycle.
+/// IHostedService that starts local queue agents and drains them on StopAsync.
+/// Agents created after StartAsync (lazy on first Enqueue) auto-start themselves.
 /// </summary>
 public sealed class MiniVerineHostedService : IHostedService
 {
+    private readonly LocalQueueCatalog _catalog;
+
+    public MiniVerineHostedService(LocalQueueCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        _catalog = catalog;
+    }
+
     public int StartCount { get; private set; }
 
     public int StopCount { get; private set; }
@@ -15,12 +24,18 @@ public sealed class MiniVerineHostedService : IHostedService
     public Task StartAsync(CancellationToken cancellationToken)
     {
         StartCount++;
+        foreach (LocalQueueAgent agent in _catalog.All.ToList())
+        {
+            agent.Start();
+        }
+
         return Task.CompletedTask;
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    public async Task StopAsync(CancellationToken cancellationToken)
     {
+        LocalQueueAgent[] agents = [.. _catalog.All];
+        await Task.WhenAll(agents.Select(agent => agent.DrainAsync(cancellationToken)));
         StopCount++;
-        return Task.CompletedTask;
     }
 }
