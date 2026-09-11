@@ -142,6 +142,18 @@ Prove-with: `port_contract_*` facts covering each surface in `tests/MiniVerine.T
 
 Prove-with: `in_memory_message_store_durability_*` facts in `tests/MiniVerine.Tests/Infrastructure/Persistence/InMemoryMessageStoreDurabilityTests.cs` (recover after successful `Start`, throwing `Start` leaves no outgoing row, duplicate `IdempotencyKey` is rejected).
 
+### Application/Serialization
+
+`ISerializer` port for `Envelope` body ↔ bytes. The caller resolves `MessageType` to CLR `Type` via `MessageTypeCatalog` before reaching the serializer; unknown CLR types are handed off to `IMissingHandler` at the Transport layer, not crashed here. Polymorphic payloads and contract versioning are the natural follow-ups once a transport carries discriminators.
+
+Prove-with: `serialize_body_then_deserialize_body_round_trips_to_equivalent_object`, `serialize_then_deserialize_envelope_preserves_headers_and_content_type`, `serialize_body_with_null_body_throws_argument_null_exception` in `tests/MiniVerine.Tests/Application/Serialization/SerializerContractTests.cs`.
+
+### Infrastructure/Serialization
+
+`JsonSerializer : ISerializer` — `System.Text.Json` implementation. Default content type `application/json`; the caller is responsible for setting `Envelope.ContentType` on the surrounding `Envelope`. Property-name matching is case-insensitive; output is compact. Adapter projects (`MiniVerine.RabbitMQ`, `MiniVerine.Http`) will plug their own content-type negotiation on top of this same port.
+
+Prove-with: shared with `Application/Serialization` — the contract tests cover both sides.
+
 ## What is left
 
 Folders that are **Plan-only** are listed in a sensible build order. Do one slice at a time; prove it before starting the next.
@@ -159,7 +171,7 @@ Folders that are **Plan-only** are listed in a sensible build order. Do one slic
 ### Infrastructure
 
 10. ~~**Hosting**~~ — done. Listeners and durability agents plug into `MiniVerineHostedService` from LocalQueues and Persistence.
-11. **Serialization** — Envelope body ↔ bytes using Domain/Messaging type names. Unknown CLR type is a handled failure.
+11. ~~**Serialization**~~ — done. `ISerializer` port + `System.Text.Json` impl; polymorphic discriminators and contract versioning are follow-ups once a transport carries them.
 12. ~~**LocalQueues**~~ — done. Bounded back-pressure, queue-invoked handler cascades, and durable mode (this folder + Persistence) are follow-ups.
 13. **Transports** — `ITransport` / endpoint ports (`local://`, later `tcp://`). Rabbit lives in `MiniVerine.RabbitMQ`.
 14. ~~**Persistence**~~ — done. Ports (`Application/Persistence`) + in-memory store (`Infrastructure/Persistence`); Npgsql adapter follows in `MiniVerine.Postgresql`.
