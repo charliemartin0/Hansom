@@ -173,7 +173,7 @@ Folders that are **Plan-only** are listed in a sensible build order. Do one slic
 10. ~~**Hosting**~~ — done. Listeners and durability agents plug into `MiniVerineHostedService` from LocalQueues and Persistence.
 11. ~~**Serialization**~~ — done. `ISerializer` port + `System.Text.Json` impl; polymorphic discriminators and contract versioning are follow-ups once a transport carries them.
 12. ~~**LocalQueues**~~ — done. Bounded back-pressure, queue-invoked handler cascades, and durable mode (this folder + Persistence) are follow-ups.
-13. **Transports** — `ITransport` / endpoint ports (`local://`, later `tcp://`). Rabbit lives in `MiniVerine.RabbitMQ`.
+13. ~~**Transports**~~ — done. `ITransport` port (`Application/Transports`) + `LocalTransport` (`local://`, `Infrastructure/Transports`); TCP, RabbitMQ, and HTTP wire transports follow in their adapter projects.
 14. ~~**Persistence**~~ — done. Ports (`Application/Persistence`) + in-memory store (`Infrastructure/Persistence`); Npgsql adapter follows in `MiniVerine.Postgresql`.
 15. **Observability** — OpenTelemetry exporters, not the Execution policies themselves.
 
