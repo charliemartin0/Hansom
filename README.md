@@ -130,6 +130,18 @@ Prove-with: `host_with_use_miniverine_registers_miniverine_hosted_service`, `hos
 
 Prove-with: `publish_async_returns_before_handle_runs`, `publish_async_dispatches_through_executor_to_discovered_handler`, `publish_async_routes_via_local_queue_attribute_to_named_queue`, `publish_async_with_no_route_falls_back_to_lowercased_type_name`, `host_stops_drain_in_flight_local_queue_work`, `local_queue_agent_pause_blocks_dispatch_until_resume`, `local_queue_catalog_creates_separate_agents_per_destination`.
 
+### Application/Persistence
+
+Ports for inbox, outbox, dead letter, and the transactional outbox boundary. `IMessageStore` composes the others; `IInboxStore` / `IOutboxStore` / `IDeadLetterStore` are the per-direction surfaces. `IOutboxTransaction` + `TransactionalOutbox` are the dual-write contract: handlers that take a session/connection wrap and flush the outbox in the same commit. The ports are how `MiniVerine.Postgresql` will plug in later.
+
+Prove-with: `port_contract_*` facts covering each surface in `tests/MiniVerine.Tests/Application/Persistence/PortContractTests.cs`.
+
+### Infrastructure/Persistence
+
+`InMemoryMessageStore : IMessageStore` — the in-process implementation used until `MiniVerine.Postgresql` lands. Recovery on `Start`, duplicate-id rejection, and the transactional outbox are exercised against this store first; the ports are the contract, this is the reference.
+
+Prove-with: `in_memory_message_store_durability_*` facts in `tests/MiniVerine.Tests/Infrastructure/Persistence/InMemoryMessageStoreDurabilityTests.cs` (recover after successful `Start`, throwing `Start` leaves no outgoing row, duplicate `IdempotencyKey` is rejected).
+
 ## What is left
 
 Folders that are **Plan-only** are listed in a sensible build order. Do one slice at a time; prove it before starting the next.
@@ -150,7 +162,7 @@ Folders that are **Plan-only** are listed in a sensible build order. Do one slic
 11. **Serialization** — Envelope body ↔ bytes using Domain/Messaging type names. Unknown CLR type is a handled failure.
 12. ~~**LocalQueues**~~ — done. Bounded back-pressure, queue-invoked handler cascades, and durable mode (this folder + Persistence) are follow-ups.
 13. **Transports** — `ITransport` / endpoint ports (`local://`, later `tcp://`). Rabbit lives in `MiniVerine.RabbitMQ`.
-14. **Persistence** — inbox / outbox / dead letter / saga store ports. In-memory first; Npgsql in `MiniVerine.Postgresql`.
+14. ~~**Persistence**~~ — done. Ports (`Application/Persistence`) + in-memory store (`Infrastructure/Persistence`); Npgsql adapter follows in `MiniVerine.Postgresql`.
 15. **Observability** — OpenTelemetry exporters, not the Execution policies themselves.
 
 ### Adapters and sample
