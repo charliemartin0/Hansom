@@ -160,13 +160,13 @@ Folders that are **Plan-only** are listed in a sensible build order. Do one slic
 
 ### Application (the bus)
 
-1. **Discovery** — find `Handle` / `HandleAsync` / `Consume` / `Start` by convention. No codegen yet.
-2. **Bus** — `IMessageBus` (`InvokeAsync`, `PublishAsync`). Public facade; no threads or sockets.
-3. **Mediator** — `InvokeAsync` on the caller’s thread until `Handle` returns.
-4. **Cascades** — handler return values become outgoing messages after success. Failure publishes nothing.
-5. **Routing** — message type → destination URI (`local://payments/`). Not the queue implementation.
-6. **Execution** — wrap one handler call: attempts, retry policy, `IMissingHandler`.
-7. **Tracking** — `TrackActivity`-shaped session for tests (`PlayScheduledMessagesAsync`).
+1. ~~**Discovery**~~ — done. `HandlerCatalog` + `HandlerConvention` find `Handle` / `HandleAsync` / `Start` / `Consume` by convention; `IMissingHandler` and `MissingHandler` cover the no-handler path; `HandlerCatalogValidator` enforces the rule.
+2. ~~**Bus**~~ — done. `IMessageBus` (`InvokeAsync`, `PublishAsync`) + `DeliveryOptions` + `IPublishEnqueuer`; public facade, no threads or sockets. Implementations live in `Mediator` and `LocalQueues`.
+3. ~~**Mediator**~~ — done. `Mediator : IMessageBus` — `InvokeAsync` runs on the caller's thread until `Handle` returns; `PublishAsync` hands off to `IPublishEnqueuer`.
+4. ~~**Cascades**~~ — done. `CascadingMessages` + `ICascadePublisher`; handler return values become outgoing messages after success, and a throwing handler publishes nothing.
+5. ~~**Routing**~~ — done. `RoutingCatalog` maps message type → destination URI (`local://payments/`); the queue implementation is in `Infrastructure/LocalQueues`.
+6. ~~**Execution**~~ — done. `Executor` wraps one handler call: attempts, typed error policy (`ErrorPolicyCatalog`), retry / cooldown / schedule / move-to-error-queue, `IMissingHandler`. Per-attempt hook (`IHandlerAttemptObserver`) feeds Tracking and Observability.
+7. ~~**Tracking**~~ — done. `TrackedSession` records executed / published / scheduled envelopes; `PlayScheduledMessagesAsync` advances scheduled work without `Task.Delay`; `RecordingScheduledEnvelopeHold` is the in-memory test decorator.
 
 ### Infrastructure
 
