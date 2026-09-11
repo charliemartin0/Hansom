@@ -6,3 +6,12 @@ obj/
 *.user
 riderModule.iml
 /_ReSharper.Caches/
+
+# Agent skill payloads installed via `npx skills add` (project-local only)
+.agents/skills/
+# Symlink farm created by `npx skills add` for Claude Code integration
+.claude/skills/
+# oh-my-opencode-slim codemap cache
+.slim/
+# `npx skills add` lockfile — see note below
+skills-lock.json
