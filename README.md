@@ -175,7 +175,7 @@ Folders that are **Plan-only** are listed in a sensible build order. Do one slic
 12. ~~**LocalQueues**~~ — done. Bounded back-pressure, queue-invoked handler cascades, and durable mode (this folder + Persistence) are follow-ups.
 13. ~~**Transports**~~ — done. `ITransport` port (`Application/Transports`) + `LocalTransport` (`local://`, `Infrastructure/Transports`); TCP, RabbitMQ, and HTTP wire transports follow in their adapter projects.
 14. ~~**Persistence**~~ — done. Ports (`Application/Persistence`) + in-memory store (`Infrastructure/Persistence`); Npgsql adapter follows in `MiniVerine.Postgresql`.
-15. **Observability** — OpenTelemetry exporters, not the Execution policies themselves.
+15. ~~**Observability**~~ — done. `MiniVerineDiagnostics` static surface (`ActivitySource`, `Meter`, `miniverine.failures` counter) + `ObservabilityAttemptObserver` (per-attempt span + counter on throw); OTel SDK exporters, `ILogger` correlation scopes, in-flight gauge, latency histogram, health checks, `describe-routing`, and redacted envelope logging are follow-ups in this folder.
 
 ### Adapters and sample
 
