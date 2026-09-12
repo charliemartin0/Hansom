@@ -27,7 +27,9 @@ public sealed class LocalTransportTests
     [Fact]
     public void local_transport_scheme_is_local()
     {
-        ITransport transport = new LocalTransport(new RecordingEnqueuer(), new HandlerCatalog(), new Executor(new ErrorPolicyCatalog()));
+        ITransport transport = new LocalTransport(
+            new RecordingEnqueuer(),
+            new MessageDelivery(new HandlerCatalog(), new Executor(new ErrorPolicyCatalog())));
         Assert.Equal("local", transport.Scheme);
     }
 
@@ -35,7 +37,9 @@ public sealed class LocalTransportTests
     public async Task local_transport_send_async_hands_envelope_to_publish_enqueuer()
     {
         var enqueuer = new RecordingEnqueuer();
-        ITransport transport = new LocalTransport(enqueuer, new HandlerCatalog(), new Executor(new ErrorPolicyCatalog()));
+        ITransport transport = new LocalTransport(
+            enqueuer,
+            new MessageDelivery(new HandlerCatalog(), new Executor(new ErrorPolicyCatalog())));
         var envelope = EnvelopeFactory.Create(
             destination: new Destination(new Uri("local://payments/")));
 
@@ -49,7 +53,9 @@ public sealed class LocalTransportTests
     {
         var handlers = new HandlerCatalog();
         handlers.Scan(typeof(RecordingPlaceOrderHandler));
-        ITransport transport = new LocalTransport(new RecordingEnqueuer(), handlers, new Executor(new ErrorPolicyCatalog()));
+        ITransport transport = new LocalTransport(
+            new RecordingEnqueuer(),
+            new MessageDelivery(handlers, new Executor(new ErrorPolicyCatalog())));
 
         var envelope = EnvelopeFactory.Create(
             message: new Message(new PlaceOrder(7)),
@@ -71,8 +77,9 @@ public sealed class LocalTransportTests
         var missing = new RecordingMissingHandler();
         ITransport transport = new LocalTransport(
             enqueuer,
-            new HandlerCatalog(),
-            new Executor(new ErrorPolicyCatalog(), missingHandler: missing));
+            new MessageDelivery(
+                new HandlerCatalog(),
+                new Executor(new ErrorPolicyCatalog(), missingHandler: missing)));
 
         var envelope = EnvelopeFactory.Create(
             message: new Message(new PlaceOrder(7)),

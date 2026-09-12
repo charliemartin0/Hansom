@@ -26,9 +26,8 @@ public sealed class MessageSchedulerTests
         catalog.Scan(typeof(ScheduledStartHandler));
         catalog.Scan(typeof(PlayedTimeoutHandler));
         var executor = new Executor(new ErrorPolicyCatalog(), scheduled: hold);
-        var dispatcher = new OutgoingDispatcher(hold);
         var bus = new MiniVerine.Application.Mediator.Mediator(catalog, executor: executor, hold: hold);
-        var scheduler = new MessageScheduler(catalog, executor, hold, dispatcher);
+        var scheduler = new MessageScheduler(new MessageDelivery(catalog, executor, hold), hold);
 
         await bus.InvokeAsync(new PlaceOrder(1));
 
@@ -52,9 +51,8 @@ public sealed class MessageSchedulerTests
         var catalog = new HandlerCatalog();
         catalog.Scan(typeof(FlakyScheduledTimeoutHandler));
         var executor = new Executor(policies, scheduled: hold);
-        var dispatcher = new OutgoingDispatcher(hold);
         hold.Park(TimeoutEnvelope());
-        var scheduler = new MessageScheduler(catalog, executor, hold, dispatcher);
+        var scheduler = new MessageScheduler(new MessageDelivery(catalog, executor, hold), hold);
 
         await scheduler.PlayDue(DateTimeOffset.UtcNow.AddYears(10));
 
@@ -69,7 +67,7 @@ public sealed class MessageSchedulerTests
         var hold = new InMemoryScheduledEnvelopeHold();
         var catalog = new HandlerCatalog();
         var executor = new Executor(new ErrorPolicyCatalog(), scheduled: hold);
-        var scheduler = new MessageScheduler(catalog, executor, hold, new OutgoingDispatcher(hold));
+        var scheduler = new MessageScheduler(new MessageDelivery(catalog, executor, hold), hold);
 
         hold.Park(TimeoutEnvelope(DateTimeOffset.UtcNow.AddHours(1)));
 
@@ -85,7 +83,7 @@ public sealed class MessageSchedulerTests
         var catalog = new HandlerCatalog();
         catalog.Scan(typeof(FailingThenPendingTimeoutHandler));
         var executor = new Executor(new ErrorPolicyCatalog(), scheduled: hold);
-        var scheduler = new MessageScheduler(catalog, executor, hold, new OutgoingDispatcher(hold));
+        var scheduler = new MessageScheduler(new MessageDelivery(catalog, executor, hold), hold);
         DateTimeOffset due = DateTimeOffset.UtcNow.AddMinutes(-1);
         hold.Park(TimeoutEnvelope(due, orderId: 1));
         hold.Park(TimeoutEnvelope(due, orderId: 2));
@@ -118,7 +116,7 @@ public sealed class MessageSchedulerTests
         var catalog = new HandlerCatalog();
         catalog.Scan(typeof(PlayedTimeoutHandler));
         var executor = new Executor(new ErrorPolicyCatalog(), scheduled: hold);
-        var scheduler = new MessageScheduler(catalog, executor, hold, new OutgoingDispatcher(hold));
+        var scheduler = new MessageScheduler(new MessageDelivery(catalog, executor, hold), hold);
         hold.Park(TimeoutEnvelope());
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();

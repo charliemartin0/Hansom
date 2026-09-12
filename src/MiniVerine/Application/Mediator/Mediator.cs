@@ -22,6 +22,7 @@ public sealed class Mediator : IMessageBus
     private static readonly Destination InvokeDestination = new(new Uri("local://invoke/"));
 
     private readonly Executor _executor;
+    private readonly MessageDelivery _delivery;
     private readonly OutgoingDispatcher _dispatcher;
     private readonly ISagaStore _sagas;
     private readonly MessageScheduler _scheduler;
@@ -43,7 +44,8 @@ public sealed class Mediator : IMessageBus
         ISagaStore? sagas = null,
         ErrorPolicyCatalog? policies = null,
         RoutingCatalog? routing = null,
-        IPublishEnqueuer? enqueuer = null)
+        IPublishEnqueuer? enqueuer = null,
+        IHandlerAttemptObserver? attempts = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         Catalog = catalog;
@@ -56,8 +58,22 @@ public sealed class Mediator : IMessageBus
             policies ?? new ErrorPolicyCatalog(),
             scheduled: scheduled,
             attempts: new SessionAttemptObserver(this));
+        if (attempts is AttemptObserverHub hub)
+        {
+            // The host shares one Executor; bind this session logger so tracked
+            // sessions keep recording Executed bags without owning the Executor.
+            hub.Bind(new SessionAttemptObserver(this));
+        }
+
         _sagas = sagas ?? new InMemorySagaStore();
-        _scheduler = new MessageScheduler(catalog, _executor, scheduled, _dispatcher);
+        _delivery = new MessageDelivery(
+            catalog,
+            _executor,
+            hold: scheduled,
+            routing: _routing,
+            onImmediate: OnImmediate,
+            cascades: cascades);
+        _scheduler = new MessageScheduler(_delivery, scheduled);
     }
 
     public Task InvokeAsync(object message, CancellationToken cancellationToken = default) =>
@@ -202,17 +218,18 @@ public sealed class Mediator : IMessageBus
 
         foreach (DiscoveredHandler handler in ((FoundHandlers)lookup).Handlers)
         {
-            DiscoveredHandler target = scheduled ? handler with { Scheduled = true } : handler;
             InHandler.Value = true;
             try
             {
-                object? result = IsSagaHandler(target)
-                    ? await InvokeSagaAsync(envelope, target, cancellationToken)
-                    : await _executor.InvokeAsync(envelope, target, cancellationToken);
-                IReadOnlyList<object> outgoing = CascadingMessages.From(result);
-                if (outgoing.Count > 0)
+                if (IsSagaHandler(handler))
                 {
-                    _dispatcher.Dispatch(outgoing, envelope);
+                    DiscoveredHandler target = scheduled ? handler with { Scheduled = true } : handler;
+                    object? sagaResult = await InvokeSagaAsync(envelope, target, cancellationToken);
+                    await _delivery.DispatchOutgoing(CascadingMessages.From(sagaResult), envelope);
+                }
+                else
+                {
+                    await _delivery.InvokeAndDispatch(envelope, handler, scheduled, cancellationToken);
                 }
             }
             finally
