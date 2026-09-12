@@ -138,6 +138,16 @@ public sealed class CascadingMessagesTests
     }
 
     [Fact]
+    public void scheduled_cascade_is_one_outgoing_item_not_unwrapped()
+    {
+        var wrapper = new ScheduledCascade(new ChargePayment(1), DateTimeOffset.UtcNow.AddSeconds(2));
+
+        IReadOnlyList<object> outgoing = CascadingMessages.From(new object[] { wrapper });
+
+        Assert.Same(wrapper, Assert.Single(outgoing));
+    }
+
+    [Fact]
     public void saga_alone_is_not_an_outgoing_message()
     {
         Assert.Empty(CascadingMessages.From(new OrderSaga { Id = 1 }));
