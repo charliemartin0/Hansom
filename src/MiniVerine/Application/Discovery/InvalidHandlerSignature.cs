@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace MiniVerine.Application.Discovery;
 
 /// <summary>
@@ -13,5 +15,21 @@ public sealed class InvalidHandlerSignature : Exception
         ArgumentNullException.ThrowIfNull(handlerType);
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
         HandlerType = handlerType;
+    }
+
+    /// <summary>
+    /// An injection slot that is neither <c>Envelope</c> nor <c>CancellationToken</c>:
+    /// MiniVerine fills only those two, so any other slot would arrive null at invocation.
+    /// </summary>
+    public InvalidHandlerSignature(Type handlerType, string methodName, ParameterInfo parameter)
+        : this(handlerType, BuildMessage(handlerType, methodName, parameter))
+    {
+    }
+
+    private static string BuildMessage(Type handlerType, string methodName, ParameterInfo parameter)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(methodName);
+        ArgumentNullException.ThrowIfNull(parameter);
+        return $"Handler '{handlerType}.{methodName}' parameter '{parameter.Name}' is not Envelope or CancellationToken; DI resolution is not registered.";
     }
 }

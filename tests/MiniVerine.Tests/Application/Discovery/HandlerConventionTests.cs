@@ -1,4 +1,5 @@
 using MiniVerine.Application.Discovery;
+using MiniVerine.Tests.Application.Discovery.InvalidSignatures;
 using MiniVerine.Tests.Domain;
 
 namespace MiniVerine.Tests.Application.Discovery;
@@ -70,15 +71,13 @@ public sealed class HandlerConventionTests
     }
 
     [Fact]
-    public void extra_parameters_are_injection_slots()
+    public void extra_parameter_that_is_not_envelope_or_cancellation_token_throws()
     {
-        var discovered = HandlerConvention.For(DiscoveryMethods.PublicOn<ChargePaymentHandler>(nameof(ChargePaymentHandler.HandleAsync)));
+        InvalidHandlerSignature error = Assert.Throws<InvalidHandlerSignature>(
+            () => HandlerConvention.For(DiscoveryMethods.PublicOn<ChargePaymentHandler>(nameof(ChargePaymentHandler.HandleAsync))));
 
-        Assert.NotNull(discovered);
-        Assert.Equal(typeof(ChargePayment), discovered.MessageClrType);
-        Assert.Equal(2, discovered.InjectionSlots.Count);
-        Assert.Equal(typeof(IPaymentGateway), discovered.InjectionSlots[0].ParameterType);
-        Assert.Equal(typeof(CancellationToken), discovered.InjectionSlots[1].ParameterType);
+        Assert.Equal(typeof(ChargePaymentHandler), error.HandlerType);
+        Assert.Contains("parameter 'gateway'", error.Message);
     }
 
     [Fact]

@@ -59,14 +59,6 @@ public sealed class StartAsyncSaga : Saga
     public Task StartAsync(StartAsyncMessage message) => Task.CompletedTask;
 }
 
-public interface IPaymentGateway;
-
-public sealed class ChargePaymentHandler
-{
-    public Task HandleAsync(ChargePayment message, IPaymentGateway gateway, CancellationToken cancellationToken) =>
-        Task.CompletedTask;
-}
-
 public sealed class FirstChargePaymentHandler
 {
     public void Handle(ChargePayment message)
