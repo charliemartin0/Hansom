@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\samples\Helpdesk\src\Helpdesk.Host\Helpdesk.Host.csproj" />
+    <ProjectReference Include="..\..\samples\Helpdesk\src\Helpdesk.Application\Helpdesk.Application.csproj" />
+    <ProjectReference Include="..\..\src\MiniVerine\MiniVerine.csproj" />
   </ItemGroup>
 
 </Project>
