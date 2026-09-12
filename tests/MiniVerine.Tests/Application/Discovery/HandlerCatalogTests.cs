@@ -109,17 +109,16 @@ public sealed class HandlerCatalogTests
     }
 
     [Fact]
-    public void extra_parameters_stay_on_the_discovered_handler()
+    public void scan_rejects_a_handler_with_an_unknown_injection_slot()
     {
         var catalog = new HandlerCatalog();
-        catalog.Scan(typeof(ChargePaymentHandler));
 
-        var found = Assert.IsType<FoundHandlers>(catalog.Lookup(typeof(ChargePayment)));
-        var handler = Assert.Single(found.Handlers);
-        Assert.False(handler.IsStatic);
-        Assert.Equal(2, handler.InjectionSlots.Count);
-        Assert.Equal(typeof(IPaymentGateway), handler.InjectionSlots[0].ParameterType);
-        Assert.Equal(typeof(CancellationToken), handler.InjectionSlots[1].ParameterType);
+        InvalidHandlerSignature error = Assert.Throws<InvalidHandlerSignature>(
+            () => catalog.Scan(typeof(ChargePaymentHandler)));
+
+        Assert.Equal(typeof(ChargePaymentHandler), error.HandlerType);
+        Assert.Contains("parameter 'gateway'", error.Message);
+        Assert.Empty(catalog.Handlers);
     }
 
     [Fact]
