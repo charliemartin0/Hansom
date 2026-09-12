@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\MiniVerine\MiniVerine.csproj" />
+    <ProjectReference Include="..\MiniVerine.Tests.Handlers\MiniVerine.Tests.Handlers.csproj" />
   </ItemGroup>
 
 </Project>

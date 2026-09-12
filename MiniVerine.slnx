@@ -14,6 +14,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Helpdesk.Tests/Helpdesk.Tests.csproj" />
+    <Project Path="tests/MiniVerine.Tests.Handlers/MiniVerine.Tests.Handlers.csproj" />
     <Project Path="tests/MiniVerine.Tests/MiniVerine.Tests.csproj" />
   </Folder>
 </Solution>

@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using MiniVerine.Application.Bus;
@@ -31,10 +32,19 @@ public static class MiniVerineHostBuilderExtensions
         var options = new MiniVerineOptions();
         configure?.Invoke(options);
         builder.Services.AddSingleton(options);
-        builder.Services.AddSingleton<HandlerCatalog>();
-        builder.Services.AddSingleton<ErrorPolicyCatalog>();
+        builder.Services.AddSingleton<HandlerCatalog>(services =>
+        {
+            var catalog = new HandlerCatalog();
+            foreach (Assembly assembly in options.HandlerAssemblies)
+            {
+                catalog.Scan(assembly);
+            }
+
+            return catalog;
+        });
+        builder.Services.AddSingleton(options.Policies);
         builder.Services.AddSingleton<MiddlewareCatalog>();
-        builder.Services.AddSingleton<RoutingCatalog>();
+        builder.Services.AddSingleton(options.Routing);
         builder.Services.AddSingleton<ISagaStore, InMemorySagaStore>();
         builder.Services.AddSingleton<IScheduledEnvelopeHold, InMemoryScheduledEnvelopeHold>();
         builder.Services.AddSingleton<IHandlerAttemptObserver, AttemptObserverHub>();
