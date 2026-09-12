@@ -1,5 +1,4 @@
-using MiniVerine.Application.Cascades;
-using MiniVerine.Application.Discovery;
+using MiniVerine.Application.Bus;
 using MiniVerine.Application.Execution;
 using MiniVerine.Domain.Envelope;
 
@@ -12,25 +11,15 @@ public interface IMessageScheduler
 
 public sealed class MessageScheduler : IMessageScheduler
 {
-    private readonly HandlerCatalog _catalog;
-    private readonly Executor _executor;
     private readonly IScheduledEnvelopeHold _hold;
-    private readonly OutgoingDispatcher _dispatcher;
+    private readonly MessageDelivery _delivery;
 
-    public MessageScheduler(
-        HandlerCatalog catalog,
-        Executor executor,
-        IScheduledEnvelopeHold hold,
-        OutgoingDispatcher dispatcher)
+    public MessageScheduler(MessageDelivery delivery, IScheduledEnvelopeHold hold)
     {
-        ArgumentNullException.ThrowIfNull(catalog);
-        ArgumentNullException.ThrowIfNull(executor);
+        ArgumentNullException.ThrowIfNull(delivery);
         ArgumentNullException.ThrowIfNull(hold);
-        ArgumentNullException.ThrowIfNull(dispatcher);
-        _catalog = catalog;
-        _executor = executor;
+        _delivery = delivery;
         _hold = hold;
-        _dispatcher = dispatcher;
     }
 
     public async Task PlayDue(DateTimeOffset asOf, CancellationToken cancellationToken = default)
@@ -77,26 +66,6 @@ public sealed class MessageScheduler : IMessageScheduler
         return int.MaxValue;
     }
 
-    private async Task InvokeDue(Envelope envelope, CancellationToken cancellationToken)
-    {
-        HandlerLookup lookup = _catalog.Lookup(envelope.Message.Value.GetType());
-        if (lookup is MissingHandler)
-        {
-            await _executor.HandleMissingAsync(envelope, cancellationToken);
-            return;
-        }
-
-        foreach (DiscoveredHandler handler in ((FoundHandlers)lookup).Handlers)
-        {
-            object? result = await _executor.InvokeAsync(
-                envelope,
-                handler with { Scheduled = true },
-                cancellationToken);
-            IReadOnlyList<object> outgoing = CascadingMessages.From(result);
-            if (outgoing.Count > 0)
-            {
-                _dispatcher.Dispatch(outgoing, envelope);
-            }
-        }
-    }
+    private Task InvokeDue(Envelope envelope, CancellationToken cancellationToken) =>
+        _delivery.Dispatch(envelope, scheduled: true, cancellationToken);
 }

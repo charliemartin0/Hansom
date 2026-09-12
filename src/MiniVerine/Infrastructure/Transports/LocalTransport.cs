@@ -1,6 +1,4 @@
 using MiniVerine.Application.Bus;
-using MiniVerine.Application.Discovery;
-using MiniVerine.Application.Execution;
 using MiniVerine.Application.Transports;
 using MiniVerine.Domain.Envelope;
 
@@ -10,25 +8,22 @@ namespace MiniVerine.Infrastructure.Transports;
 /// The local:// transport. <see cref="SendAsync"/> hands envelopes to
 /// <see cref="IPublishEnqueuer"/> (LocalQueueCatalog by default) so outbound
 /// envelopes join the same per-destination agent that Mediator.PublishAsync uses.
-/// <see cref="DeliverAsync"/> runs inbound envelopes straight through Execution —
-/// there is no wire to read for local://, so the listen path is synchronous on
-/// the caller's thread. Mirrors <c>LocalQueueAgent.ProcessAsync</c> for the listen
-/// side but skips the channel/worker.
+/// <see cref="DeliverAsync"/> runs inbound envelopes through the shared
+/// <see cref="MessageDelivery"/> — there is no wire to read for local://, so the listen
+/// path is synchronous on the caller's thread. Mirrors <c>LocalQueueAgent</c> for the
+/// listen side but skips the channel/worker.
 /// </summary>
 public sealed class LocalTransport : ITransport
 {
     private readonly IPublishEnqueuer _enqueuer;
-    private readonly HandlerCatalog _handlers;
-    private readonly Executor _executor;
+    private readonly MessageDelivery _delivery;
 
-    public LocalTransport(IPublishEnqueuer enqueuer, HandlerCatalog handlers, Executor executor)
+    public LocalTransport(IPublishEnqueuer enqueuer, MessageDelivery delivery)
     {
         ArgumentNullException.ThrowIfNull(enqueuer);
-        ArgumentNullException.ThrowIfNull(handlers);
-        ArgumentNullException.ThrowIfNull(executor);
+        ArgumentNullException.ThrowIfNull(delivery);
         _enqueuer = enqueuer;
-        _handlers = handlers;
-        _executor = executor;
+        _delivery = delivery;
     }
 
     public string Scheme => "local";
@@ -43,16 +38,6 @@ public sealed class LocalTransport : ITransport
     public async ValueTask DeliverAsync(Envelope envelope, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(envelope);
-        HandlerLookup lookup = _handlers.Lookup(envelope.Message.Value.GetType());
-        if (lookup is MissingHandler)
-        {
-            await _executor.HandleMissingAsync(envelope, cancellationToken);
-            return;
-        }
-
-        foreach (DiscoveredHandler handler in ((FoundHandlers)lookup).Handlers)
-        {
-            await _executor.InvokeAsync(envelope, handler with { Scheduled = true }, cancellationToken);
-        }
+        await _delivery.Dispatch(envelope, scheduled: true, cancellationToken);
     }
 }

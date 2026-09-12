@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Threading.Channels;
-using MiniVerine.Application.Discovery;
-using MiniVerine.Application.Execution;
+using MiniVerine.Application.Bus;
 using MiniVerine.Domain.Envelope;
 
 namespace MiniVerine.Infrastructure.LocalQueues;
@@ -9,27 +8,25 @@ namespace MiniVerine.Infrastructure.LocalQueues;
 /// <summary>
 /// One in-process queue worker for a destination. Owns a channel and a single reader task.
 /// v1 is unbounded; back-pressure is a future slice. A durable queue is this agent plus Persistence.
+/// Dispatch (including cascade re-enqueueing) goes through the shared <see cref="MessageDelivery"/>.
 /// </summary>
 public sealed class LocalQueueAgent
 {
     private readonly Channel<Envelope> _channel = Channel.CreateUnbounded<Envelope>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
-    private readonly HandlerCatalog _catalog;
-    private readonly Executor _executor;
+    private readonly MessageDelivery _delivery;
     private volatile TaskCompletionSource _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private volatile bool _paused;
     private volatile Task? _worker;
     private int _started;
 
-    public LocalQueueAgent(string name, HandlerCatalog catalog, Executor executor)
+    public LocalQueueAgent(string name, MessageDelivery delivery)
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
-        ArgumentNullException.ThrowIfNull(catalog);
-        ArgumentNullException.ThrowIfNull(executor);
+        ArgumentNullException.ThrowIfNull(delivery);
         Name = name;
-        _catalog = catalog;
-        _executor = executor;
+        _delivery = delivery;
     }
 
     public string Name { get; }
@@ -75,6 +72,8 @@ public sealed class LocalQueueAgent
         }
     }
 
+    private Task WaitWhilePausedAsync() => _paused ? _gate.Task : Task.CompletedTask;
+
     private async Task RunAsync()
     {
         while (await _channel.Reader.WaitToReadAsync())
@@ -84,30 +83,13 @@ public sealed class LocalQueueAgent
                 await WaitWhilePausedAsync();
                 try
                 {
-                    await ProcessAsync(envelope);
+                    await _delivery.Dispatch(envelope, scheduled: true);
                 }
                 catch (Exception exception)
                 {
                     Trace.TraceError($"Local queue '{Name}' failed handling an envelope: {exception}");
                 }
             }
-        }
-    }
-
-    private Task WaitWhilePausedAsync() => _paused ? _gate.Task : Task.CompletedTask;
-
-    private async Task ProcessAsync(Envelope envelope)
-    {
-        HandlerLookup lookup = _catalog.Lookup(envelope.Message.Value.GetType());
-        if (lookup is MissingHandler)
-        {
-            await _executor.HandleMissingAsync(envelope);
-            return;
-        }
-
-        foreach (DiscoveredHandler handler in ((FoundHandlers)lookup).Handlers)
-        {
-            await _executor.InvokeAsync(envelope, handler with { Scheduled = true });
         }
     }
 }
