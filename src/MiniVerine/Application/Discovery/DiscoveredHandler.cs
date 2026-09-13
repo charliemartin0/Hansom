@@ -1,4 +1,5 @@
 using System.Reflection;
+using MiniVerine.Application.Execution;
 
 namespace MiniVerine.Application.Discovery;
 
@@ -12,4 +13,12 @@ public sealed record DiscoveredHandler(
     bool IsStatic,
     IReadOnlyList<ParameterInfo> InjectionSlots,
     Func<object?>? ResolveTarget = null,
-    bool Scheduled = false);
+    bool Scheduled = false)
+{
+    /// <summary>
+    /// Compiled at Scan time by <see cref="HandlerInvokerCompiler"/>. Null for handlers
+    /// constructed at runtime (e.g. the saga NotFound miss path) — the Executor falls
+    /// back to reflection for those.
+    /// </summary>
+    internal HandlerInvoker? CachedInvoker { get; init; }
+}

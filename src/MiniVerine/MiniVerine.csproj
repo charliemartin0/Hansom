@@ -12,6 +12,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Internal API (CachedInvoker, HandlerInvoker) must be readable by the test project. -->
+    <InternalsVisibleTo Include="MiniVerine.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Folder Include="Domain\Sagas\Validators\" />
   </ItemGroup>
 
