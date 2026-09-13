@@ -76,7 +76,7 @@ public static class CascadingMessages
             return;
         }
 
-        object? result = taskType.GetProperty(nameof(Task<object>.Result))?.GetValue(task);
+        object? result = TaskResultAccessor.GetResult(task);
         Append(outgoing, result);
     }
 }
