@@ -11,5 +11,6 @@
 //
 // The transaction is short-lived (one per handler call) while the store is long-lived
 // (one per host); obtain it from the store via IOutboxStore.BeginOutboxTransaction.
-// The Postgres adapter will implement the same IOutboxTransaction shape over an Npgsql
-// connection so outbox rows commit in the same transaction as the handler's writes.
+// The Postgres adapter implements the same IOutboxTransaction shape over an Npgsql
+// connection. The outbox's own writes are atomic on that connection; sharing it with the
+// handler's own DB writes is a follow-up slice.

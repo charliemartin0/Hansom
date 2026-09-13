@@ -1,3 +1,4 @@
+using Hansom.Application.Persistence;
 using Hansom.Domain.Envelope;
 using Hansom.Domain.Envelope.ValueObjects;
 using Hansom.Domain.Messaging.ValueObjects;
@@ -83,6 +84,20 @@ public sealed class PostgresOutboxStoreTests : IClassFixture<PostgresContainerFi
 
         Envelope pending = Assert.Single(await recovered.LoadPendingAsync());
         Assert.Equal(envelope.Id, pending.Id);
+    }
+
+    [Fact]
+    public async Task begin_outbox_transaction_returns_a_real_implementation()
+    {
+        IOutboxTransaction transaction = _store.BeginOutboxTransaction();
+        Envelope envelope = PostgresOutboxTestEnvelope.Create();
+
+        await transaction.StageAsync(envelope);
+        await transaction.CommitAsync();
+
+        Envelope pending = Assert.Single(await _store.LoadPendingAsync());
+        Assert.Equal(envelope.Id, pending.Id);
+        await ((IAsyncDisposable)transaction).DisposeAsync();
     }
 }
 
