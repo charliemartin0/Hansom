@@ -2,6 +2,7 @@ using Hansom.Application.Bus;
 using Hansom.Application.Cascades;
 using Hansom.Application.Discovery;
 using Hansom.Application.Execution;
+using Hansom.Application.Persistence;
 using Hansom.Application.Routing;
 using Hansom.Application.Sagas;
 using Hansom.Application.Scheduling;
@@ -234,8 +235,42 @@ public sealed class Mediator : IMessageBus
                 if (IsSagaHandler(handler))
                 {
                     DiscoveredHandler target = scheduled ? handler with { Scheduled = true } : handler;
-                    object? sagaResult = await InvokeSagaAsync(envelope, target, cancellationToken);
-                    await _delivery.DispatchOutgoing(CascadingMessages.From(sagaResult), envelope);
+
+                    // Take the outbox transaction the middleware registered for this
+                    // envelope id, after the handler attempt: an AsyncLocal set inside the
+                    // middleware does not flow back here, so the registration is the
+                    // hand-off. Re-establish it as the ambient in THIS context so the
+                    // cascade dispatch below stages into it. Commit (or roll back) happens
+                    // in the finally AFTER _sagas.Save and the immediate-publish attempt —
+                    // a Save throw or a failed dispatch must roll back, never leave the
+                    // outbox pending ("no save then publish").
+                    IOutboxTransaction? tx = null;
+                    bool failed = true;
+                    try
+                    {
+                        (Saga? instance, object? sagaResult) = await InvokeSagaAsync(envelope, target, cancellationToken);
+                        tx = OutboxTransactionScope.Take(envelope.Id);
+                        if (tx is not null)
+                        {
+                            OutboxTransactionScope.Begin(tx);
+                        }
+
+                        if (instance is not null)
+                        {
+                            SagaId sagaId = SagaIdentityNaming.For(envelope.Message.Value, target.HandlerType);
+                            _sagas.Save(target.HandlerType, sagaId, instance);
+                        }
+
+                        await _delivery.DispatchOutgoing(CascadingMessages.From(sagaResult), envelope, cancellationToken);
+                        failed = false;
+                    }
+                    finally
+                    {
+                        if (tx is not null)
+                        {
+                            await OutboxTransactionScope.Complete(tx, success: !failed, cancellationToken);
+                        }
+                    }
                 }
                 else
                 {
@@ -249,7 +284,14 @@ public sealed class Mediator : IMessageBus
         }
     }
 
-    private async Task<object?> InvokeSagaAsync(
+    /// <summary>
+    /// Run the saga's handler through the executor and return the saga instance to persist
+    /// (or <see langword="null"/> for the NotFound miss path) plus the handler's result.
+    /// Persisting happens at the call site — after the handler attempt and before the
+    /// cascade dispatch — so a save failure rolls back the outbox transaction instead of
+    /// leaving it pending.
+    /// </summary>
+    private async Task<(Saga? Instance, object? Result)> InvokeSagaAsync(
         Envelope envelope,
         DiscoveredHandler handler,
         CancellationToken cancellationToken)
@@ -278,13 +320,13 @@ public sealed class Mediator : IMessageBus
                 sagaEnvelope,
                 handler with { ResolveTarget = () => started = Activator.CreateInstance(sagaType) },
                 cancellationToken);
-            _sagas.Save(sagaType, sagaId, (Saga)started!);
-            return result;
+            return ((Saga)started!, result);
         }
 
         if (row is null || row.IsCompleted)
         {
-            return await InvokeNotFoundAsync(sagaEnvelope, handler, sagaId, cancellationToken);
+            object? notFoundResult = await InvokeNotFoundAsync(sagaEnvelope, handler, sagaId, cancellationToken);
+            return (null, notFoundResult);
         }
 
         object? loaded = null;
@@ -292,8 +334,7 @@ public sealed class Mediator : IMessageBus
             sagaEnvelope,
             handler with { ResolveTarget = () => loaded = _sagas.Load(sagaType, sagaId) },
             cancellationToken);
-        _sagas.Save(sagaType, sagaId, (Saga)loaded!);
-        return handled;
+        return ((Saga)loaded!, handled);
     }
 
     private async Task<object?> InvokeNotFoundAsync(

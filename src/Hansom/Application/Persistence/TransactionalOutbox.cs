@@ -1,18 +1,15 @@
-// Transactional outbox middleware contract.
+// Transactional outbox contract — enforced by TransactionalOutboxMiddleware (kernel).
 //
-// This is not a middleware type. The actual wiring lands in a follow-up slice that uses
-// Hansom.Application.Middleware.IMessageMiddleware to enforce the contract around each
-// handler attempt. Keeping the contract here (next to IOutboxTransaction) lets the port
-// land first without inventing middleware in this slice.
-//
-// A handler that participates in the outbox MUST:
-//   1. Call IOutboxTransaction.StageAsync for every cascaded message it produces.
-//   2. On success, call IOutboxTransaction.CommitAsync so the staged envelopes become
-//      pending and survive a host restart.
-//   3. On failure, call IOutboxTransaction.RollbackAsync so a throwing handler
-//      publishes nothing ("no save then publish").
+// The middleware is the kernel implementation of this contract (this slice): it opens one
+// IOutboxTransaction per handler attempt and exposes it as the ambient
+// OutboxTransactionScope.Current. The dispatch path (MessageDelivery.DispatchOutgoing and
+// the Mediator saga branch) stages cascaded envelopes on that transaction instead of
+// publishing them immediately, and the call site that owns the handler attempt commits in
+// a finally AFTER the saga state was saved and the immediate-publish attempt; the
+// middleware rolls back when the handler throws. A throwing handler — or a failed saga
+// save — therefore publishes nothing ("no save then publish").
 //
 // The transaction is short-lived (one per handler call) while the store is long-lived
-// (one per host); obtain it from the store via InMemoryMessageStore.BeginOutboxTransaction.
+// (one per host); obtain it from the store via IOutboxStore.BeginOutboxTransaction.
 // The Postgres adapter will implement the same IOutboxTransaction shape over an Npgsql
 // connection so outbox rows commit in the same transaction as the handler's writes.

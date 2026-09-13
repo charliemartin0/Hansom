@@ -56,6 +56,39 @@ public sealed class InMemoryMessageStoreDurabilityTests
         await transaction.StageAsync(envelope);
         await transaction.CommitAsync();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () => await transaction.StageAsync(envelope));
+        await Assert.ThrowsAsync<OutboxTransactionAlreadyCompletedException>(
+            async () => await transaction.StageAsync(envelope));
+    }
+
+    [Fact]
+    public async Task outbox_transactions_do_not_share_staged_buffer()
+    {
+        var store = new InMemoryMessageStore();
+        IOutboxTransaction first = store.BeginOutboxTransaction();
+        IOutboxTransaction second = store.BeginOutboxTransaction();
+        Envelope firstEnvelope = EnvelopeFactory.Create();
+        Envelope secondEnvelope = EnvelopeFactory.Create();
+
+        await first.StageAsync(firstEnvelope);
+        await first.RollbackAsync();
+        await second.StageAsync(secondEnvelope);
+        await second.CommitAsync();
+
+        // The first transaction's rollback must not discard the second transaction's
+        // staged envelope — each transaction owns its staged buffer.
+        Envelope pending = Assert.Single(await store.Outbox.LoadPendingAsync());
+        Assert.Equal(secondEnvelope.Id, pending.Id);
+    }
+
+    [Fact]
+    public async Task outbox_transaction_double_commit_throws_already_completed_exception()
+    {
+        var store = new InMemoryMessageStore();
+        IOutboxTransaction transaction = store.BeginOutboxTransaction();
+        await transaction.StageAsync(EnvelopeFactory.Create());
+        await transaction.CommitAsync();
+
+        await Assert.ThrowsAsync<OutboxTransactionAlreadyCompletedException>(
+            async () => await transaction.CommitAsync());
     }
 }

@@ -34,6 +34,13 @@ public sealed class PostgresOutboxStore : IOutboxStore
     }
 
     /// <inheritdoc />
+    public IOutboxTransaction BeginOutboxTransaction() =>
+        throw new NotSupportedException(
+            "PostgresOutboxStore.BeginOutboxTransaction() is not yet implemented. Use a Postgres "
+            + "IOutboxTransaction implementation (follow-up slice) wrapped by a host-level "
+            + "transactional outbox middleware.");
+
+    /// <inheritdoc />
     public async ValueTask StageAsync(Envelope envelope, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(envelope);

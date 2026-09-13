@@ -1,6 +1,7 @@
 using Hansom.Application.Cascades;
 using Hansom.Application.Discovery;
 using Hansom.Application.Execution;
+using Hansom.Application.Persistence;
 using Hansom.Application.Routing;
 using Hansom.Application.Scheduling;
 using Hansom.Application.Transports;
@@ -78,6 +79,11 @@ public sealed class MessageDelivery
     /// <summary>
     /// Run one handler and enqueue its return value. The Mediator uses this for the
     /// non-saga branch of its own dispatch loop (saga state machines stay in the Mediator).
+    /// When the handler ran inside an ambient <see cref="IOutboxTransaction"/> (set by the
+    /// transactional outbox middleware), the cascades are staged on it by
+    /// <see cref="DispatchOutgoing"/> and this method commits the transaction in a
+    /// <c>finally</c> — AFTER the immediate-publish attempt — so a throwing handler or a
+    /// failed dispatch rolls back and publishes nothing.
     /// </summary>
     public async Task InvokeAndDispatch(
         Envelope envelope,
@@ -88,19 +94,54 @@ public sealed class MessageDelivery
         ArgumentNullException.ThrowIfNull(envelope);
         ArgumentNullException.ThrowIfNull(handler);
         DiscoveredHandler target = scheduled ? handler with { Scheduled = true } : handler;
-        object? result = await _executor.InvokeAsync(envelope, target, cancellationToken);
-        IReadOnlyList<object> outgoing = CascadingMessages.From(result);
-        if (outgoing.Count > 0)
+
+        // Take the outbox transaction the middleware registered for this envelope id,
+        // after the handler attempt: an AsyncLocal set inside the middleware does not
+        // flow back here, so the registration is the hand-off. Re-establish it as the
+        // ambient in THIS context (which survives our own awaits) so DispatchOutgoing
+        // stages into it. The finally uses this snapshot, not a fresh read of Current —
+        // a nested handler or retry may have set/cleared the ambient since.
+        IOutboxTransaction? tx = null;
+        bool failed = true;
+        try
         {
-            await DispatchOutgoing(outgoing, envelope);
+            object? result = await _executor.InvokeAsync(envelope, target, cancellationToken);
+            tx = OutboxTransactionScope.Take(envelope.Id);
+            if (tx is not null)
+            {
+                OutboxTransactionScope.Begin(tx);
+            }
+
+            IReadOnlyList<object> outgoing = CascadingMessages.From(result);
+            if (outgoing.Count > 0)
+            {
+                await DispatchOutgoing(outgoing, envelope, cancellationToken);
+            }
+
+            failed = false;
+        }
+        finally
+        {
+            if (tx is not null)
+            {
+                await OutboxTransactionScope.Complete(tx, success: !failed, cancellationToken);
+            }
         }
     }
 
     /// <summary>
     /// Enqueue a handler's return values after success: park delayed messages in the
     /// scheduled hold, send immediate ones through the bound hook or the owning transport.
+    /// When a handler ran inside an ambient <see cref="IOutboxTransaction"/> (set by the
+    /// transactional outbox middleware), the immediate cascades are staged on that
+    /// transaction instead of being published — the owning call site commits them as
+    /// pending after this method returns, so a throwing handler or a failed saga save
+    /// rolls back and publishes nothing.
     /// </summary>
-    public async Task DispatchOutgoing(IReadOnlyList<object> outgoing, Envelope parent)
+    public async Task DispatchOutgoing(
+        IReadOnlyList<object> outgoing,
+        Envelope parent,
+        CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(outgoing);
         ArgumentNullException.ThrowIfNull(parent);
@@ -121,6 +162,20 @@ public sealed class MessageDelivery
 
         if (immediate.Count == 0)
         {
+            return;
+        }
+
+        // Outbox redirect: an ambient transaction means the cascades must be staged, not
+        // published. The owning call site commits/rolls back with the handler outcome;
+        // staged envelopes become pending on commit and replay on host start.
+        IOutboxTransaction? tx = OutboxTransactionScope.Current;
+        if (tx is not null)
+        {
+            foreach (object message in immediate)
+            {
+                await tx.StageAsync(Build(message, DateTimeOffset.UtcNow, null, parent), ct).ConfigureAwait(false);
+            }
+
             return;
         }
 

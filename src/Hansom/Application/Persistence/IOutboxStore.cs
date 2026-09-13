@@ -4,9 +4,13 @@ using Hansom.Domain.Envelope.ValueObjects;
 namespace Hansom.Application.Persistence;
 
 /// <summary>
-/// Outbox port. Stages outgoing envelopes in the handler's transaction, commits them as
-/// pending on success, and replays pending envelopes on host start. Persistence owns the
-/// durable rows later; the in-memory store is the current default.
+/// Outbox port. Two stage/commit paths share the pending set: the long-lived store
+/// (StageAsync/CommitAsync on this interface) is the host-replay and dispatch-recovery
+/// path, while the short-lived <see cref="IOutboxTransaction"/> returned by
+/// <see cref="BeginOutboxTransaction"/> is the per-handler transactional path — the
+/// kernel middleware stages cascades on the transaction, never on the long-lived store.
+/// Pending envelopes replay on host start; persistence owns the durable rows later; the
+/// in-memory store is the current default.
 /// </summary>
 public interface IOutboxStore
 {
@@ -35,4 +39,13 @@ public interface IOutboxStore
     /// Mark a pending envelope as sent after Execution takes ownership of it.
     /// </summary>
     ValueTask MarkSentAsync(EnvelopeId id, CancellationToken ct = default);
+
+    /// <summary>
+    /// Begin a short-lived outbox transaction, one per handler attempt. Cascaded messages
+    /// MUST be staged on the returned transaction (not the long-lived store) and
+    /// committed/rolled back aligned with the handler outcome — the
+    /// TransactionalOutboxMiddleware opens it, the dispatch path stages on it, and the
+    /// owning call site commits after the saga save and the immediate-publish attempt.
+    /// </summary>
+    IOutboxTransaction BeginOutboxTransaction();
 }
