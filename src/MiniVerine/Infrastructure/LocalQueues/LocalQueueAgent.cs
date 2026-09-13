@@ -14,7 +14,7 @@ public sealed class LocalQueueAgent
 {
     private readonly Channel<Envelope> _channel = Channel.CreateUnbounded<Envelope>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
-    private readonly Func<Envelope, CancellationToken, Task> _dispatch;
+    private readonly DispatchHandler _dispatch;
     private volatile TaskCompletionSource _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private volatile bool _paused;
@@ -34,7 +34,7 @@ public sealed class LocalQueueAgent
     /// saga orchestration (load/save), not the plain executor path that would invoke
     /// them on a fresh instance and drop the state.
     /// </summary>
-    internal LocalQueueAgent(string name, Func<Envelope, CancellationToken, Task> dispatch)
+    internal LocalQueueAgent(string name, DispatchHandler dispatch)
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(dispatch);

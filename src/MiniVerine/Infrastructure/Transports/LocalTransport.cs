@@ -16,7 +16,7 @@ namespace MiniVerine.Infrastructure.Transports;
 public sealed class LocalTransport : ITransport
 {
     private readonly IPublishEnqueuer _enqueuer;
-    private readonly Func<Envelope, CancellationToken, Task> _dispatch;
+    private readonly DispatchHandler _dispatch;
 
     public LocalTransport(IPublishEnqueuer enqueuer, MessageDelivery delivery)
         : this(enqueuer, (envelope, cancellationToken) =>
@@ -30,7 +30,7 @@ public sealed class LocalTransport : ITransport
     /// Dispatch hook for the host: inbound envelopes must route saga handlers through
     /// the saga orchestration (load/save), not the plain executor path.
     /// </summary>
-    internal LocalTransport(IPublishEnqueuer enqueuer, Func<Envelope, CancellationToken, Task> dispatch)
+    internal LocalTransport(IPublishEnqueuer enqueuer, DispatchHandler dispatch)
     {
         ArgumentNullException.ThrowIfNull(enqueuer);
         ArgumentNullException.ThrowIfNull(dispatch);

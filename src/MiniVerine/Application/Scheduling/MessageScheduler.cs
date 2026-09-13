@@ -12,7 +12,7 @@ public interface IMessageScheduler
 public sealed class MessageScheduler : IMessageScheduler
 {
     private readonly IScheduledEnvelopeHold _hold;
-    private readonly Func<Envelope, CancellationToken, Task> _dispatch;
+    private readonly DispatchHandler _dispatch;
 
     public MessageScheduler(MessageDelivery delivery, IScheduledEnvelopeHold hold)
         : this(hold, (envelope, cancellationToken) =>
@@ -26,7 +26,7 @@ public sealed class MessageScheduler : IMessageScheduler
     /// through the saga orchestration (load/save), not the plain executor path that
     /// would invoke them on a fresh instance and drop the state.
     /// </summary>
-    internal MessageScheduler(IScheduledEnvelopeHold hold, Func<Envelope, CancellationToken, Task> dispatch)
+    internal MessageScheduler(IScheduledEnvelopeHold hold, DispatchHandler dispatch)
     {
         ArgumentNullException.ThrowIfNull(hold);
         ArgumentNullException.ThrowIfNull(dispatch);
