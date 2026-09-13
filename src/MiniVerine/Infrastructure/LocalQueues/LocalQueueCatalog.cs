@@ -13,12 +13,23 @@ namespace MiniVerine.Infrastructure.LocalQueues;
 public sealed class LocalQueueCatalog : IPublishEnqueuer
 {
     private readonly ConcurrentDictionary<string, LocalQueueAgent> _agents = new(StringComparer.Ordinal);
-    private readonly MessageDelivery _delivery;
+    private readonly Func<Envelope, CancellationToken, Task> _dispatch;
 
     public LocalQueueCatalog(MessageDelivery delivery)
+        : this((envelope, cancellationToken) =>
+            delivery.Dispatch(envelope, scheduled: true, cancellationToken))
     {
         ArgumentNullException.ThrowIfNull(delivery);
-        _delivery = delivery;
+    }
+
+    /// <summary>
+    /// Dispatch hook for the host: agents route saga handlers through the saga
+    /// orchestration (load/save), not the plain executor path.
+    /// </summary>
+    internal LocalQueueCatalog(Func<Envelope, CancellationToken, Task> dispatch)
+    {
+        ArgumentNullException.ThrowIfNull(dispatch);
+        _dispatch = dispatch;
     }
 
     public IEnumerable<LocalQueueAgent> All => _agents.Values;
@@ -27,7 +38,7 @@ public sealed class LocalQueueCatalog : IPublishEnqueuer
     {
         ArgumentNullException.ThrowIfNull(destination);
         string key = destination.Value.ToString();
-        return _agents.GetOrAdd(key, _ => new LocalQueueAgent(key, _delivery));
+        return _agents.GetOrAdd(key, _ => new LocalQueueAgent(key, _dispatch));
     }
 
     public void Enqueue(Envelope envelope)

@@ -208,9 +208,10 @@ public sealed class Mediator : IMessageBus
 
     /// <summary>
     /// Drain and tracked Publish use Scheduled kind and inherit conversation/correlation ids.
-    /// Public InvokeAsync stays Invoke-kind and mints new ids.
+    /// Public InvokeAsync stays Invoke-kind and mints new ids. Internal so the local queues
+    /// and transports can route saga handlers through the saga orchestration (load/save).
     /// </summary>
-    private async Task DispatchHandlers(Envelope envelope, bool scheduled, CancellationToken cancellationToken)
+    internal async Task DispatchHandlers(Envelope envelope, bool scheduled, CancellationToken cancellationToken)
     {
         HandlerLookup lookup = Catalog.Lookup(envelope.Message.Value.GetType());
         if (lookup is MissingHandler)
