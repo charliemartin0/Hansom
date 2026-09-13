@@ -130,4 +130,18 @@ public static class PostgresSchema
         await using NpgsqlCommand cmd = new NpgsqlCommand(sql, conn);
         await cmd.ExecuteNonQueryAsync(ct);
     }
+
+    /// <summary>
+    /// Create every Hansom Postgres table that the adapter needs. Idempotent;
+    /// safe to call repeatedly. Call once at startup before the host starts
+    /// processing messages — typically from Program.cs.
+    /// </summary>
+    public static async ValueTask EnsureAllAsync(NpgsqlDataSource dataSource, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(dataSource);
+        await EnsureOutboxTableAsync(dataSource, ct);
+        await EnsureInboxTableAsync(dataSource, ct);
+        await EnsureDeadLetterTableAsync(dataSource, ct);
+        await EnsureSagaTableAsync(dataSource, ct);
+    }
 }
