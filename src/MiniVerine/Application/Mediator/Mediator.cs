@@ -10,6 +10,7 @@ using MiniVerine.Infrastructure.Sagas;
 using MiniVerine.Infrastructure.Scheduling;
 using MiniVerine.Domain.Envelope;
 using MiniVerine.Domain.Envelope.ValueObjects;
+using MiniVerine.Domain.Envelope.Validators;
 using MiniVerine.Domain.Messaging;
 using MiniVerine.Domain.Messaging.ValueObjects;
 using MiniVerine.Domain.Sagas;
@@ -22,6 +23,8 @@ public sealed class Mediator : IMessageBus
     private static readonly AsyncLocal<bool> InHandler = new();
 
     private static readonly Destination InvokeDestination = new(new Uri("local://invoke/"));
+
+    private static readonly EnvelopeValidator EnvelopeValidator = new();
 
     private readonly Executor _executor;
     private readonly MessageDelivery _delivery;
@@ -334,7 +337,7 @@ public sealed class Mediator : IMessageBus
     private static Envelope EnvelopeForPublish(object message, Destination destination)
     {
         DateTimeOffset sent = DateTimeOffset.UtcNow;
-        return new Envelope(
+        Envelope envelope = new(
             new EnvelopeId(Guid.NewGuid()),
             new Message(message),
             MessageTypeNaming.For(message.GetType()),
@@ -348,6 +351,14 @@ public sealed class Mediator : IMessageBus
             new ContentType(""),
             new Attempts(1),
             new EnvelopeData());
+
+        FluentValidation.Results.ValidationResult validation = EnvelopeValidator.Validate(envelope);
+        if (!validation.IsValid)
+        {
+            throw new FluentValidation.ValidationException(validation.Errors);
+        }
+
+        return envelope;
     }
 
     private static Envelope EnvelopeForDescendant(object message, Envelope parent, Destination destination)

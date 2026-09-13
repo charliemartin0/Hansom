@@ -1,8 +1,10 @@
 using System.Reflection;
+using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using MiniVerine.Application.Bus;
 using MiniVerine.Application.Discovery;
+using MiniVerine.Application.Discovery.Validators;
 using MiniVerine.Application.Execution;
 using MiniVerine.Application.Mediator;
 using MiniVerine.Application.Middleware;
@@ -40,6 +42,12 @@ public static class MiniVerineHostBuilderExtensions
             foreach (Assembly assembly in options.HandlerAssemblies)
             {
                 catalog.Scan(assembly);
+            }
+
+            FluentValidation.Results.ValidationResult validation = new HandlerCatalogValidator().Validate(catalog);
+            if (!validation.IsValid)
+            {
+                throw new ValidationException(validation.Errors);
             }
 
             return catalog;
