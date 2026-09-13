@@ -75,7 +75,7 @@ Hansom/
     Domain/                      Envelope, wire names, saga identity, named errors — no I/O
     Application/                 Invoke, cascades, routing, execution, sagas — ports only
     Infrastructure/              host, JSON, local queues, transport/persistence ports
-  src/Hansom.Postgresql/         persistence adapter (scaffold)
+  src/Hansom.Postgresql/         persistence adapter (shipped)
   src/Hansom.RabbitMQ/           broker adapter (scaffold)
   src/Hansom.Http/               HTTP front door (scaffold)
   samples/Helpdesk/src/
@@ -93,15 +93,14 @@ Hansom/
 
 The kernel ships. The broker adapters are the next milestones. Each is a slice: prove-with test first, then the smallest type that makes it pass.
 
-1. **PostgreSQL adapter** — durable inbox / outbox / saga stores against Npgsql. Ports exist; the adapter fills them.
-2. **RabbitMQ adapter** — broker transport + durable subscriptions.
-3. **HTTP adapter** — request/response across processes against the same execution pipeline.
-4. **First-party logging middleware** — structured logs around handler invocation.
-5. **Validator middleware** — pluggable handler-input validation.
-6. **Outbox middleware** — kernel-level transactional outbox over the persistence ports.
-7. **Polymorphic serialization** — discriminator-aware JSON for heterogeneous payloads.
-8. **Observability polish** — OTel exporters, in-flight gauges, latency histograms beyond the static `ActivitySource`/`Meter`.
-9. **1.0** — once the kernel is documented, one broker adapter is shipped, and the project reads clean to a newcomer.
+1. **RabbitMQ adapter** — broker transport + durable subscriptions.
+2. **HTTP adapter** — request/response across processes against the same execution pipeline.
+3. **First-party logging middleware** — structured logs around handler invocation.
+4. **Validator middleware** — pluggable handler-input validation.
+5. **Outbox middleware** — kernel-level transactional outbox over the persistence ports.
+6. **Polymorphic serialization** — discriminator-aware JSON for heterogeneous payloads.
+7. **Observability polish** — OTel exporters, in-flight gauges, latency histograms beyond the static `ActivitySource`/`Meter`.
+8. **1.0** — once the kernel is documented, one broker adapter is shipped, and the project reads clean to a newcomer.
 
 ## Inspiration
 
