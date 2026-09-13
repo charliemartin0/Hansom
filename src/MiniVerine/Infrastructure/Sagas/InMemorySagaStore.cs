@@ -1,8 +1,9 @@
 using System.Reflection;
+using MiniVerine.Application.Sagas;
 using MiniVerine.Domain.Sagas;
 using MiniVerine.Domain.Sagas.ValueObjects;
 
-namespace MiniVerine.Application.Sagas;
+namespace MiniVerine.Infrastructure.Sagas;
 
 /// <summary>
 /// In-memory snapshots. Save and Load shallow-clone so a throwing Handle cannot dirty the stored instance.

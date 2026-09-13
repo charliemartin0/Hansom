@@ -1,6 +1,7 @@
 using MiniVerine.Application.Discovery;
 using MiniVerine.Application.Execution;
 using MiniVerine.Application.Scheduling;
+using MiniVerine.Infrastructure.Scheduling;
 using MiniVerine.Domain.Envelope;
 using MiniVerine.Domain.Errors.ValueObjects;
 using MiniVerine.Domain.Messaging;

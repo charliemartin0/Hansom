@@ -3,6 +3,7 @@ using System.Runtime.ExceptionServices;
 using MiniVerine.Application.Cascades;
 using MiniVerine.Application.Discovery;
 using MiniVerine.Application.Middleware;
+using MiniVerine.Application.Scheduling;
 using MiniVerine.Application.Tracking;
 using MiniVerine.Domain.Envelope;
 using MiniVerine.Domain.Envelope.ValueObjects;

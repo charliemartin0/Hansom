@@ -1,6 +1,7 @@
 using MiniVerine.Application.Bus;
 using MiniVerine.Application.Cascades;
 using MiniVerine.Application.Scheduling;
+using MiniVerine.Infrastructure.Scheduling;
 using MiniVerine.Domain.Envelope.ValueObjects;
 using MiniVerine.Domain.Sagas.ValueObjects;
 using MiniVerine.Tests.Domain;

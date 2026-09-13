@@ -169,7 +169,7 @@ public sealed class ExecutorTests
     [Fact]
     public async Task named_scheduled_argument_still_binds_the_hold_when_observer_is_last()
     {
-        var hold = new MiniVerine.Application.Scheduling.InMemoryScheduledEnvelopeHold();
+        var hold = new MiniVerine.Infrastructure.Scheduling.InMemoryScheduledEnvelopeHold();
         var executor = new Executor(new ErrorPolicyCatalog(), scheduled: hold, attempts: new RecordingAttemptObserver());
 
         await executor.InvokeAsync(ChargePaymentEnvelope(), HandlerFor<SucceedingChargePaymentHandler>());

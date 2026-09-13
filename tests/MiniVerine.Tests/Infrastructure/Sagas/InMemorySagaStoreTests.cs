@@ -1,7 +1,8 @@
-using MiniVerine.Application.Sagas;
+using MiniVerine.Infrastructure.Sagas;
 using MiniVerine.Domain.Sagas.ValueObjects;
+using MiniVerine.Tests.Application.Sagas;
 
-namespace MiniVerine.Tests.Application.Sagas;
+namespace MiniVerine.Tests.Infrastructure.Sagas;
 
 public sealed class InMemorySagaStoreTests
 {

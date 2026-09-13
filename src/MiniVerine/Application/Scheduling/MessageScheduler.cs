@@ -1,5 +1,4 @@
 using MiniVerine.Application.Bus;
-using MiniVerine.Application.Execution;
 using MiniVerine.Domain.Envelope;
 
 namespace MiniVerine.Application.Scheduling;
