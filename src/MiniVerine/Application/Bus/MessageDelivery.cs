@@ -104,10 +104,11 @@ public sealed class MessageDelivery
         ArgumentNullException.ThrowIfNull(outgoing);
         ArgumentNullException.ThrowIfNull(parent);
         var immediate = new List<object>();
-        foreach (object message in outgoing)
+        foreach (object item in outgoing)
         {
+            (object message, DeliveryOptions? options) = UnwrapSchedule(item);
             DateTimeOffset sentAt = DateTimeOffset.UtcNow;
-            DateTimeOffset? due = DelayedDelivery.DueAt(message.GetType(), options: null, sentAt);
+            DateTimeOffset? due = DelayedDelivery.DueAt(message.GetType(), options, sentAt);
             if (due is not null)
             {
                 _hold.Park(Build(message, sentAt, due, parent));
@@ -140,6 +141,11 @@ public sealed class MessageDelivery
 
         _cascades?.Publish(immediate);
     }
+
+    private static (object Message, DeliveryOptions? Options) UnwrapSchedule(object item) =>
+        item is ScheduledCascade scheduled
+            ? (scheduled.Message, new DeliveryOptions { Until = scheduled.Until })
+            : (item, null);
 
     private Envelope Build(object message, DateTimeOffset sentAt, DateTimeOffset? deliverBy, Envelope parent)
     {

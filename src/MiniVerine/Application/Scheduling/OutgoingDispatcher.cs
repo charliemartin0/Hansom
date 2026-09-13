@@ -52,9 +52,10 @@ public sealed class OutgoingDispatcher
         ArgumentNullException.ThrowIfNull(outgoing);
         ArgumentNullException.ThrowIfNull(parent);
         var immediate = new List<object>();
-        foreach (object message in outgoing)
+        foreach (object item in outgoing)
         {
-            if (!TryPark(message, options: null, parent))
+            (object message, DeliveryOptions? options) = UnwrapSchedule(item);
+            if (!TryPark(message, options, parent))
             {
                 immediate.Add(message);
             }
@@ -73,6 +74,11 @@ public sealed class OutgoingDispatcher
             _immediate?.Publish(immediate);
         }
     }
+
+    private static (object Message, DeliveryOptions? Options) UnwrapSchedule(object item) =>
+        item is ScheduledCascade scheduled
+            ? (scheduled.Message, new DeliveryOptions { Until = scheduled.Until })
+            : (item, null);
 
     private static Envelope Build(object message, DateTimeOffset sentAt, DateTimeOffset due, Envelope? parent)
     {
