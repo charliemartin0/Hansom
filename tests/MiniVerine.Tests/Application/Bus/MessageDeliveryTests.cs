@@ -65,7 +65,7 @@ public sealed class MessageDeliveryTests
 
         public Task<Envelope> Moved => _moved.Task;
 
-        public void Move(Envelope envelope) => _moved.TrySetResult(envelope);
+        public void Move(Envelope envelope, Exception cause) => _moved.TrySetResult(envelope);
     }
 }
 

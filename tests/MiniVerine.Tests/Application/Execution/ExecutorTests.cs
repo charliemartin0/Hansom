@@ -255,7 +255,7 @@ public sealed class RecordingErrorQueue : IErrorQueue
 {
     public List<Envelope> Moved { get; } = [];
 
-    public void Move(Envelope envelope)
+    public void Move(Envelope envelope, Exception cause)
     {
         Moved.Add(envelope);
     }

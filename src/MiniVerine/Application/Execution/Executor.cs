@@ -172,7 +172,7 @@ public sealed class Executor
 
                 return WithNextAttempt(current);
             case MoveToErrorQueue:
-                _errorQueue?.Move(current);
+                _errorQueue?.Move(current, fault);
                 throw new HandlerFault(fault);
             case ScheduleRetry retry:
                 if (kind is InvocationKind.Invoke)
