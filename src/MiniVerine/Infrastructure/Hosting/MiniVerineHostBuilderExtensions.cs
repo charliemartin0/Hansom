@@ -63,12 +63,15 @@ public static class MiniVerineHostBuilderExtensions
             hold: services.GetRequiredService<IScheduledEnvelopeHold>(),
             routing: services.GetRequiredService<RoutingCatalog>(),
             transport: () => services.GetRequiredService<ITransport>()));
-        builder.Services.AddSingleton<LocalQueueCatalog>();
+        builder.Services.AddSingleton<LocalQueueCatalog>(services => new LocalQueueCatalog(
+            (envelope, cancellationToken) => services.GetRequiredService<Mediator>()
+                .DispatchHandlers(envelope, scheduled: true, cancellationToken)));
         builder.Services.AddSingleton<IPublishEnqueuer>(
             services => services.GetRequiredService<LocalQueueCatalog>());
         builder.Services.AddSingleton<ITransport>(services => new LocalTransport(
             services.GetRequiredService<IPublishEnqueuer>(),
-            services.GetRequiredService<MessageDelivery>()));
+            (envelope, cancellationToken) => services.GetRequiredService<Mediator>()
+                .DispatchHandlers(envelope, scheduled: true, cancellationToken)));
         builder.Services.AddSingleton<Mediator>(services => new Mediator(
             services.GetRequiredService<HandlerCatalog>(),
             executor: services.GetRequiredService<Executor>(),
