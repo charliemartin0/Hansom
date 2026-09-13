@@ -52,6 +52,10 @@ public static class MiniVerineHostBuilderExtensions
         builder.Services.AddSingleton<IHandlerAttemptObserver, AttemptObserverHub>();
         builder.Services.AddSingleton<ISerializer, JsonSerializer>();
         builder.Services.AddSingleton<IMessageStore, InMemoryMessageStore>();
+        builder.Services.AddSingleton<IDeadLetterStore>(
+            services => services.GetRequiredService<IMessageStore>().DeadLetter);
+        builder.Services.AddSingleton<IErrorQueue>(services => new DeadLetterQueueAdapter(
+            services.GetRequiredService<IDeadLetterStore>()));
         builder.Services.AddSingleton<Executor>(services => new Executor(
             services.GetRequiredService<ErrorPolicyCatalog>(),
             errorQueue: services.GetService<IErrorQueue>(),

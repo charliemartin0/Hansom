@@ -7,5 +7,9 @@ namespace MiniVerine.Application.Execution;
 /// </summary>
 public interface IErrorQueue
 {
-    void Move(Envelope envelope);
+    /// <summary>
+    /// Move an exhausted envelope to the dead-letter destination, carrying the
+    /// exception that exhausted the retries as the cause.
+    /// </summary>
+    void Move(Envelope envelope, Exception cause);
 }
