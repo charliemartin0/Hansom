@@ -4,6 +4,7 @@ using MiniVerine.Application.Discovery;
 using MiniVerine.Application.Execution;
 using MiniVerine.Application.Scheduling;
 using MiniVerine.Application.Tracking;
+using MiniVerine.Infrastructure.Scheduling;
 using MiniVerine.Domain.Envelope;
 
 namespace MiniVerine.Tests.Application.Bus;

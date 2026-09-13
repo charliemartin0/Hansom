@@ -2,6 +2,7 @@ using MiniVerine.Application.Bus;
 using MiniVerine.Application.Discovery;
 using MiniVerine.Application.Execution;
 using MiniVerine.Application.Sagas;
+using MiniVerine.Infrastructure.Sagas;
 using MiniVerine.Domain.Envelope;
 using MiniVerine.Domain.Errors.ValueObjects;
 using MiniVerine.Domain.Sagas;

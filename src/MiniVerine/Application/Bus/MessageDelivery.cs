@@ -4,6 +4,7 @@ using MiniVerine.Application.Execution;
 using MiniVerine.Application.Routing;
 using MiniVerine.Application.Scheduling;
 using MiniVerine.Application.Transports;
+using MiniVerine.Infrastructure.Scheduling;
 using MiniVerine.Domain.Envelope;
 using MiniVerine.Domain.Envelope.ValueObjects;
 using MiniVerine.Domain.Messaging;

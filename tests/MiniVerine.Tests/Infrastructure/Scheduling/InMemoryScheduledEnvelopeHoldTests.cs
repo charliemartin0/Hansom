@@ -1,8 +1,9 @@
 using MiniVerine.Application.Scheduling;
+using MiniVerine.Infrastructure.Scheduling;
 using MiniVerine.Domain.Envelope.ValueObjects;
 using MiniVerine.Tests.Domain.Envelope;
 
-namespace MiniVerine.Tests.Application.Scheduling;
+namespace MiniVerine.Tests.Infrastructure.Scheduling;
 
 public sealed class InMemoryScheduledEnvelopeHoldTests
 {
