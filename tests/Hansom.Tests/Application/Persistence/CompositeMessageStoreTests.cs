@@ -48,6 +48,10 @@ public sealed class CompositeMessageStoreTests
 
     private sealed class RecordingOutboxStore : IOutboxStore
     {
+        public IOutboxTransaction BeginOutboxTransaction() =>
+            throw new NotSupportedException(
+                "RecordingOutboxStore.BeginOutboxTransaction() is not implemented in this test double.");
+
         public ValueTask StageAsync(Envelope envelope, CancellationToken ct = default) =>
             throw new NotImplementedException();
 

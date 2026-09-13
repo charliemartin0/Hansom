@@ -53,10 +53,11 @@ public sealed class InMemoryMessageStore : IMessageStore
     public IDeadLetterStore DeadLetter { get; }
 
     /// <summary>
-    /// Begin a short-lived outbox transaction. Staging plus Commit/Rollback is the transactional
-    /// middleware contract. The returned transaction is single-use and shares this store's staged buffer.
+    /// Begin a short-lived outbox transaction. Staging plus Commit/Rollback is the
+    /// transactional middleware contract: one transaction per handler attempt, with a
+    /// transaction-local staged buffer so concurrent attempts never clobber each other.
     /// </summary>
-    /// <returns>A new transaction that stages into this store.</returns>
+    /// <returns>A new single-use transaction that stages into this store.</returns>
     public IOutboxTransaction BeginOutboxTransaction() => new OutboxTransaction(this);
 
     private void Stage(Envelope envelope)
@@ -82,6 +83,8 @@ public sealed class InMemoryMessageStore : IMessageStore
         private readonly InMemoryMessageStore _store;
 
         public OutboxStore(InMemoryMessageStore store) => _store = store;
+
+        public IOutboxTransaction BeginOutboxTransaction() => _store.BeginOutboxTransaction();
 
         public ValueTask StageAsync(Envelope envelope, CancellationToken ct = default)
         {
@@ -165,6 +168,7 @@ public sealed class InMemoryMessageStore : IMessageStore
     private sealed class OutboxTransaction : IOutboxTransaction
     {
         private readonly InMemoryMessageStore _store;
+        private readonly List<Envelope> _staged = [];
         private bool _completed;
 
         public OutboxTransaction(InMemoryMessageStore store) => _store = store;
@@ -172,14 +176,20 @@ public sealed class InMemoryMessageStore : IMessageStore
         public ValueTask StageAsync(Envelope envelope, CancellationToken ct = default)
         {
             ThrowIfCompleted();
-            _store.Stage(envelope);
+            ArgumentNullException.ThrowIfNull(envelope);
+            _staged.Add(envelope);
             return ValueTask.CompletedTask;
         }
 
         public ValueTask CommitAsync(CancellationToken ct = default)
         {
             ThrowIfCompleted();
-            _store.CommitStaged();
+            foreach (Envelope envelope in _staged)
+            {
+                _store._pending[envelope.Id] = envelope;
+            }
+
+            _staged.Clear();
             _completed = true;
             return ValueTask.CompletedTask;
         }
@@ -187,7 +197,7 @@ public sealed class InMemoryMessageStore : IMessageStore
         public ValueTask RollbackAsync(CancellationToken ct = default)
         {
             ThrowIfCompleted();
-            _store.RollbackStaged();
+            _staged.Clear();
             _completed = true;
             return ValueTask.CompletedTask;
         }
@@ -196,8 +206,7 @@ public sealed class InMemoryMessageStore : IMessageStore
         {
             if (_completed)
             {
-                throw new InvalidOperationException(
-                    "This outbox transaction already completed; begin a new transaction to stage more envelopes.");
+                throw new OutboxTransactionAlreadyCompletedException();
             }
         }
     }

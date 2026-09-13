@@ -6,7 +6,10 @@ namespace Hansom.Application.Persistence;
 /// Short-lived outbox transaction, one per handler call. Implemented by the in-memory store;
 /// the Postgres adapter wraps a real Npgsql connection so outbox rows commit with the
 /// handler's writes. A single instance is single-use: once committed or rolled back, any
-/// further call throws <see cref="InvalidOperationException"/>.
+/// further call throws <see cref="OutboxTransactionAlreadyCompletedException"/>.
+/// Staging happens on a transaction-local buffer — the long-lived store's staged set is
+/// the host-replay / dispatch-recovery path and is not shared with per-handler
+/// transactions, so concurrent handler attempts never clobber each other's staged rows.
 /// </summary>
 public interface IOutboxTransaction
 {

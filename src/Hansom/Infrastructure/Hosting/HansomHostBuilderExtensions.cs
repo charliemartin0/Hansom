@@ -53,7 +53,19 @@ public static class HansomHostBuilderExtensions
             return catalog;
         });
         builder.Services.AddSingleton(options.Policies);
-        builder.Services.AddSingleton<MiddlewareCatalog>();
+        builder.Services.AddSingleton<IOutboxStore>(
+            services => services.GetRequiredService<IMessageStore>().Outbox);
+        builder.Services.AddSingleton<TransactionalOutboxMiddleware>();
+        builder.Services.AddSingleton<MiddlewareCatalog>(services =>
+        {
+            var catalog = new MiddlewareCatalog();
+            if (options.EnableTransactionalOutbox)
+            {
+                catalog.Register(MiddlewareLayer.Inner, services.GetRequiredService<TransactionalOutboxMiddleware>());
+            }
+
+            return catalog;
+        });
         builder.Services.AddSingleton(options.Routing);
         builder.Services.AddSingleton<ISagaStore, InMemorySagaStore>();
         builder.Services.AddSingleton<IScheduledEnvelopeHold, InMemoryScheduledEnvelopeHold>();
