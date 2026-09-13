@@ -5,8 +5,8 @@ using Testcontainers.PostgreSql;
 namespace Hansom.Tests.Postgresql;
 
 /// <summary>
-/// Shared Postgres container per test class. Starts once, bootstraps the outbox, inbox, and
-/// dead-letter schemas, and exposes TRUNCATE helpers so each fact gets a fresh table.
+/// Shared Postgres container per test class. Starts once, bootstraps the outbox, inbox,
+/// dead-letter, and saga schemas, and exposes TRUNCATE helpers so each fact gets a fresh table.
 /// </summary>
 public sealed class PostgresContainerFixture : IAsyncLifetime
 {
@@ -45,6 +45,7 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
         await PostgresSchema.EnsureOutboxTableAsync(DataSource);
         await PostgresSchema.EnsureInboxTableAsync(DataSource);
         await PostgresSchema.EnsureDeadLetterTableAsync(DataSource);
+        await PostgresSchema.EnsureSagaTableAsync(DataSource);
     }
 
     public async Task DisposeAsync()
@@ -71,6 +72,13 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
     {
         await using NpgsqlConnection conn = await DataSource.OpenConnectionAsync();
         await using NpgsqlCommand cmd = new NpgsqlCommand("TRUNCATE TABLE hansom_dead_letter", conn);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task ResetSagasAsync()
+    {
+        await using NpgsqlConnection conn = await DataSource.OpenConnectionAsync();
+        await using NpgsqlCommand cmd = new NpgsqlCommand("TRUNCATE TABLE hansom_sagas", conn);
         await cmd.ExecuteNonQueryAsync();
     }
 }

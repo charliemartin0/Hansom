@@ -100,4 +100,34 @@ public static class PostgresSchema
         await using NpgsqlCommand cmd = new NpgsqlCommand(sql, conn);
         await cmd.ExecuteNonQueryAsync(ct);
     }
+
+    /// <summary>
+    /// Create the <c>hansom_sagas</c> table if it does not already exist.
+    /// <para>
+    /// Shape: <c>(saga_type TEXT, saga_id TEXT, state JSONB, is_completed BOOLEAN DEFAULT FALSE,
+    /// updated_at TIMESTAMPTZ DEFAULT now(), PRIMARY KEY (saga_type, saga_id))</c>. The composite
+    /// key mirrors <see cref="ISagaStore"/>'s (sagaType, id) addressing; <c>state</c> is the
+    /// serialized saga POCO and <c>is_completed</c> carries the completion flag that is excluded
+    /// from the JSON. Last-write-wins upserts, no version column.
+    /// </para>
+    /// </summary>
+    public static async ValueTask EnsureSagaTableAsync(NpgsqlDataSource dataSource, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(dataSource);
+
+        const string sql = """
+            CREATE TABLE IF NOT EXISTS hansom_sagas (
+                saga_type TEXT NOT NULL,
+                saga_id TEXT NOT NULL,
+                state JSONB NOT NULL,
+                is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY (saga_type, saga_id)
+            );
+            """;
+
+        await using NpgsqlConnection conn = await dataSource.OpenConnectionAsync(ct);
+        await using NpgsqlCommand cmd = new NpgsqlCommand(sql, conn);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
 }
