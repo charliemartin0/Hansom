@@ -2,11 +2,11 @@ using Helpdesk.Application.Sagas;
 using Helpdesk.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using MiniVerine;
-using MiniVerine.Application.Bus;
-using MiniVerine.Application.Sagas;
-using MiniVerine.Application.Tracking;
-using MiniVerine.Domain.Sagas.ValueObjects;
+using Hansom;
+using Hansom.Application.Bus;
+using Hansom.Application.Sagas;
+using Hansom.Application.Tracking;
+using Hansom.Domain.Sagas.ValueObjects;
 
 namespace Helpdesk.Tests.Application;
 
@@ -80,7 +80,7 @@ public sealed class OrderConversationTests
     private static async Task<IHost> StartedHostAsync()
     {
         var builder = Host.CreateApplicationBuilder();
-        builder.UseMiniVerine(options =>
+        builder.UseHansom(options =>
         {
             options.HandlerAssemblies.Add(typeof(PlaceOrder).Assembly);
             options.HandlerAssemblies.Add(typeof(OrderSaga).Assembly);
