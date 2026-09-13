@@ -4,14 +4,17 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using MiniVerine;
 using MiniVerine.Application.Bus;
+using MiniVerine.Application.Sagas;
 using MiniVerine.Application.Tracking;
+using MiniVerine.Domain.Sagas.ValueObjects;
 
 namespace Helpdesk.Tests.Application;
 
 /// <summary>
-/// Prove-with for the Helpdesk sample: the smallest in-memory conversation through
-/// MiniVerine's public surface — PlaceOrder starts an OrderSaga whose cascades run
-/// ChargePayment and then PaymentCharged inside one tracked session.
+/// Prove-with for the Helpdesk sample: PlaceOrder starts an OrderSaga and cascades a
+/// ChargePayment; PaymentCharged is an EXTERNAL confirmation published separately, and
+/// the OrderTimeout (scheduled at PlaceOrder.DueAt via ScheduledCascade) cancels the
+/// in-progress saga when the payment never arrives.
 /// </summary>
 public sealed class OrderConversationTests
 {
@@ -33,11 +36,45 @@ public sealed class OrderConversationTests
         using IHost host = await StartedHostAsync();
         IMessageBus bus = host.Services.GetRequiredService<IMessageBus>();
 
-        TrackedSession session = await bus.InvokeTrackedAsync(NewPlaceOrder());
-
+        // The order is placed and charged; the saga is still in progress.
+        TrackedSession placed = await bus.InvokeTrackedAsync(NewPlaceOrder());
         Assert.Equal(
-            [typeof(PlaceOrder), typeof(ChargePayment), typeof(PaymentCharged)],
-            session.Executed.Select(executed => executed.Message.GetType()));
+            [typeof(PlaceOrder), typeof(ChargePayment)],
+            placed.Executed.Select(executed => executed.Message.GetType()));
+
+        // The payment confirmation arrives later, as an external event.
+        TrackedSession paid = await bus.InvokeTrackedAsync(
+            new PaymentCharged(new OrderId(1), new PaymentReference("pay-1"), DateTimeOffset.UtcNow));
+
+        Assert.Equal([typeof(PaymentCharged)], paid.Executed.Select(executed => executed.Message.GetType()));
+
+        ISagaStore store = host.Services.GetRequiredService<ISagaStore>();
+        var saga = Assert.IsType<OrderSaga>(store.Load(typeof(OrderSaga), new SagaId("1")));
+        Assert.Equal(OrderStatus.CompletedByPayment, saga.Status);
+    }
+
+    [Fact]
+    public async Task invoke_tracked_place_order_fires_order_timeout_via_handle_within_a_short_window()
+    {
+        using IHost host = await StartedHostAsync();
+        IMessageBus bus = host.Services.GetRequiredService<IMessageBus>();
+        ISagaStore store = host.Services.GetRequiredService<ISagaStore>();
+
+        // Payment never arrives; the timeout is due 100ms out.
+        TrackedSession placed = await bus.InvokeTrackedAsync(
+            NewPlaceOrder(dueAt: DateTimeOffset.UtcNow.AddMilliseconds(100)));
+        Assert.Equal(
+            [typeof(PlaceOrder), typeof(ChargePayment)],
+            placed.Executed.Select(executed => executed.Message.GetType()));
+
+        await Task.Delay(200);
+
+        TrackedSession timedOut = await placed.PlayScheduledMessagesAsync(DateTimeOffset.UtcNow);
+
+        // The timeout fired through the Handle path on the in-progress saga, cancelling it.
+        Assert.Equal([typeof(OrderTimeout)], timedOut.Executed.Select(executed => executed.Message.GetType()));
+        var saga = Assert.IsType<OrderSaga>(store.Load(typeof(OrderSaga), new SagaId("1")));
+        Assert.Equal(OrderStatus.CompletedByTimeout, saga.Status);
     }
 
     private static async Task<IHost> StartedHostAsync()
@@ -53,6 +90,11 @@ public sealed class OrderConversationTests
         return host;
     }
 
-    private static PlaceOrder NewPlaceOrder() =>
-        new(new OrderId(1), new CustomerId(Guid.NewGuid()), 42.5m, DateTimeOffset.UtcNow);
+    private static PlaceOrder NewPlaceOrder(DateTimeOffset? dueAt = null) =>
+        new(
+            new OrderId(1),
+            new CustomerId(Guid.NewGuid()),
+            42.5m,
+            DateTimeOffset.UtcNow,
+            dueAt ?? DateTimeOffset.UtcNow.AddMinutes(5));
 }

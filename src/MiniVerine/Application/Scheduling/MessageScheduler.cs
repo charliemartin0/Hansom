@@ -12,14 +12,26 @@ public interface IMessageScheduler
 public sealed class MessageScheduler : IMessageScheduler
 {
     private readonly IScheduledEnvelopeHold _hold;
-    private readonly MessageDelivery _delivery;
+    private readonly Func<Envelope, CancellationToken, Task> _dispatch;
 
     public MessageScheduler(MessageDelivery delivery, IScheduledEnvelopeHold hold)
+        : this(hold, (envelope, cancellationToken) =>
+            delivery.Dispatch(envelope, scheduled: true, cancellationToken))
     {
         ArgumentNullException.ThrowIfNull(delivery);
+    }
+
+    /// <summary>
+    /// Dispatch hook for the Mediator: scheduled envelopes must route saga handlers
+    /// through the saga orchestration (load/save), not the plain executor path that
+    /// would invoke them on a fresh instance and drop the state.
+    /// </summary>
+    internal MessageScheduler(IScheduledEnvelopeHold hold, Func<Envelope, CancellationToken, Task> dispatch)
+    {
         ArgumentNullException.ThrowIfNull(hold);
-        _delivery = delivery;
+        ArgumentNullException.ThrowIfNull(dispatch);
         _hold = hold;
+        _dispatch = dispatch;
     }
 
     public async Task PlayDue(DateTimeOffset asOf, CancellationToken cancellationToken = default)
@@ -67,5 +79,5 @@ public sealed class MessageScheduler : IMessageScheduler
     }
 
     private Task InvokeDue(Envelope envelope, CancellationToken cancellationToken) =>
-        _delivery.Dispatch(envelope, scheduled: true, cancellationToken);
+        _dispatch(envelope, cancellationToken);
 }

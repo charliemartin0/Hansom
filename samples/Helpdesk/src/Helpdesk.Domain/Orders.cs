@@ -18,16 +18,34 @@ public sealed record PaymentReference(string Value);
 /// <summary>
 /// Starts an order conversation. Saga correlation uses the Id property (the
 /// convention fallback — Helpdesk.Domain carries no MiniVerine attributes).
+/// DueAt is the deadline by which PaymentCharged must arrive; the OrderTimeout
+/// scheduled at DueAt cancels the saga when the payment never comes.
 /// </summary>
-public sealed record PlaceOrder(OrderId Id, CustomerId Customer, decimal Amount, DateTimeOffset PlacedAt);
+public sealed record PlaceOrder(
+    OrderId Id,
+    CustomerId Customer,
+    decimal Amount,
+    DateTimeOffset PlacedAt,
+    DateTimeOffset DueAt);
 
 public sealed record ChargePayment(OrderId Id, PaymentReference PaymentRef, decimal Amount);
 
 public sealed record PaymentCharged(OrderId Id, PaymentReference PaymentRef, DateTimeOffset ChargedAt);
 
 /// <summary>
-/// Defined for the saga miss path (NotFound); not scheduled or exercised in the
-/// in-memory conversation slice — scheduling needs a delay mechanism the
-/// MiniVerine-free Domain cannot express.
+/// Defined for the saga timeout path; scheduled per-order via ScheduledCascade at
+/// PlaceOrder.DueAt (not via a per-type [Timeout] attribute).
 /// </summary>
 public sealed record OrderTimeout(OrderId Id);
+
+/// <summary>
+/// Order lifecycle. Distinguishes a saga completed by the payment confirmation from
+/// one cancelled by the OrderTimeout so the sample can prove which path ran.
+/// </summary>
+public enum OrderStatus
+{
+    Placed,
+    Charged,
+    CompletedByPayment,
+    CompletedByTimeout,
+}
