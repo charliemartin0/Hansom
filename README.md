@@ -1,10 +1,10 @@
-# MiniVerine
+# Hansom
 
 A Wolverine-shaped in-process bus, built in slices. This repo sits next to `WolverineTest` (the real-Wolverine learning sample), not as a dependency.
 
 **Inspectable kernel:** no source-gen, ports-first persistence, named errors. Rabbit/HTTP/cron are ignorable adapters. Do not treat this README’s slice list as permission to clone Wolverine’s full catalog.
 
-Read the **code that exists**, then use the questions below. Answers are collapsed so you can try to explain each one yourself. Questions marked **(planned)** are in `*Plan` comments only — MiniVerine does not run that pipeline yet. Open `WolverineTest` when you want to see the finished conversation.
+Read the **code that exists**, then use the questions below. Answers are collapsed so you can try to explain each one yourself. Questions marked **(planned)** are in `*Plan` comments only — Hansom does not run that pipeline yet. Open `WolverineTest` when you want to see the finished conversation.
 
 ## What you should feel
 
@@ -36,26 +36,26 @@ sequenceDiagram
 ## Layout
 
 ```
-MiniVerine/
-  src/MiniVerine/
+Hansom/
+  src/Hansom/
     Domain/                      Envelope, wire names, saga identity, named errors — no I/O
     Application/                 Invoke, cascades, routing, execution, sagas — ports only
     Infrastructure/              host, JSON, local queues, transport/persistence ports
-  src/MiniVerine.Postgresql/     persistence adapter (empty)
-  src/MiniVerine.RabbitMQ/        broker adapter (empty)
-  src/MiniVerine.Http/           HTTP front door (empty)
+  src/Hansom.Postgresql/     persistence adapter (empty)
+  src/Hansom.RabbitMQ/        broker adapter (empty)
+  src/Hansom.Http/           HTTP front door (empty)
   samples/Helpdesk/src/
-    Helpdesk.Domain/             entities / value objects — no MiniVerine, no infra
-    Helpdesk.Application/       messages + handlers — Domain + MiniVerine
-    Helpdesk.Infrastructure/      Marten/Npgsql wiring — Application + MiniVerine.Postgresql
+    Helpdesk.Domain/             entities / value objects — no Hansom, no infra
+    Helpdesk.Application/       messages + handlers — Domain + Hansom
+    Helpdesk.Infrastructure/      Marten/Npgsql wiring — Application + Hansom.Postgresql
     Helpdesk.Host/              composition root (Generic Host)
-  tests/MiniVerine.Tests
+  tests/Hansom.Tests
   tests/Helpdesk.Tests
 ```
 
-Each MiniVerine feature folder has a `*Plan` class. The XML comments are the spec: **Put here**, **Do not put here**, **Prove with**. Core must not reference the adapter projects. Npgsql stays in `MiniVerine.Postgresql`; Rabbit in `MiniVerine.RabbitMQ`; HTTP in `MiniVerine.Http`.
+Each Hansom feature folder has a `*Plan` class. The XML comments are the spec: **Put here**, **Do not put here**, **Prove with**. Core must not reference the adapter projects. Npgsql stays in `Hansom.Postgresql`; Rabbit in `Hansom.RabbitMQ`; HTTP in `Hansom.Http`.
 
-Helpdesk.Domain has no MiniVerine and no infra. Helpdesk.Application may reference MiniVerine. Helpdesk.Infrastructure may reference MiniVerine.Postgresql. Helpdesk.Host is the composition root.
+Helpdesk.Domain has no Hansom and no infra. Helpdesk.Application may reference Hansom. Helpdesk.Infrastructure may reference Hansom.Postgresql. Helpdesk.Host is the composition root.
 
 ## What is done
 
@@ -114,9 +114,9 @@ Prove-with: PaymentCharged loads the same instance Start created; after complete
 
 ### Infrastructure/Hosting
 
-`UseMiniVerine(IHostApplicationBuilder, Action<MiniVerineOptions>?)` registers `MiniVerineOptions`, `HandlerCatalog`, `IMessageBus → Mediator`, and `MiniVerineHostedService : IHostedService` as singletons. `MiniVerineOptions.HandlerAssemblies` (`ICollection<Assembly>`) is the opt-in list for handler discovery. The console host starts and stops cleanly with no messages; `MiniVerineHostedService` is the lifecycle hook for future listeners and durability agents (LocalQueues, Persistence plug into its `StartAsync` / `StopAsync`).
+`UseHansom(IHostApplicationBuilder, Action<HansomOptions>?)` registers `HansomOptions`, `HandlerCatalog`, `IMessageBus → Mediator`, and `HansomHostedService : IHostedService` as singletons. `HansomOptions.HandlerAssemblies` (`ICollection<Assembly>`) is the opt-in list for handler discovery. The console host starts and stops cleanly with no messages; `HansomHostedService` is the lifecycle hook for future listeners and durability agents (LocalQueues, Persistence plug into its `StartAsync` / `StopAsync`).
 
-Prove-with: `host_with_use_miniverine_registers_miniverine_hosted_service`, `host_with_use_miniverine_registers_message_bus_as_singleton`, `host_starts_and_stops_cleanly_with_no_messages`.
+Prove-with: `host_with_use_hansom_registers_hansom_hosted_service`, `host_with_use_hansom_registers_message_bus_as_singleton`, `host_starts_and_stops_cleanly_with_no_messages`.
 
 ### Infrastructure/LocalQueues
 
@@ -126,31 +126,31 @@ Prove-with: `host_with_use_miniverine_registers_miniverine_hosted_service`, `hos
 
 `LocalQueueCatalog : IPublishEnqueuer` — `ConcurrentDictionary<string, LocalQueueAgent>` keyed by destination URI; one agent per destination.
 
-`MiniVerineHostedService` starts all agents on `StartAsync` and `DrainAsync` × N on `StopAsync` so the host stops cleanly with no in-flight work dropped. Cascades from untracked `InvokeAsync` route + enqueue through the same path; tracked sessions still record to `Published` and the worklist for tests.
+`HansomHostedService` starts all agents on `StartAsync` and `DrainAsync` × N on `StopAsync` so the host stops cleanly with no in-flight work dropped. Cascades from untracked `InvokeAsync` route + enqueue through the same path; tracked sessions still record to `Published` and the worklist for tests.
 
 Prove-with: `publish_async_returns_before_handle_runs`, `publish_async_dispatches_through_executor_to_discovered_handler`, `publish_async_routes_via_local_queue_attribute_to_named_queue`, `publish_async_with_no_route_falls_back_to_lowercased_type_name`, `host_stops_drain_in_flight_local_queue_work`, `local_queue_agent_pause_blocks_dispatch_until_resume`, `local_queue_catalog_creates_separate_agents_per_destination`.
 
 ### Application/Persistence
 
-Ports for inbox, outbox, dead letter, and the transactional outbox boundary. `IMessageStore` composes the others; `IInboxStore` / `IOutboxStore` / `IDeadLetterStore` are the per-direction surfaces. `IOutboxTransaction` + `TransactionalOutbox` are the dual-write contract: handlers that take a session/connection wrap and flush the outbox in the same commit. The ports are how `MiniVerine.Postgresql` will plug in later.
+Ports for inbox, outbox, dead letter, and the transactional outbox boundary. `IMessageStore` composes the others; `IInboxStore` / `IOutboxStore` / `IDeadLetterStore` are the per-direction surfaces. `IOutboxTransaction` + `TransactionalOutbox` are the dual-write contract: handlers that take a session/connection wrap and flush the outbox in the same commit. The ports are how `Hansom.Postgresql` will plug in later.
 
-Prove-with: `port_contract_*` facts covering each surface in `tests/MiniVerine.Tests/Application/Persistence/PortContractTests.cs`.
+Prove-with: `port_contract_*` facts covering each surface in `tests/Hansom.Tests/Application/Persistence/PortContractTests.cs`.
 
 ### Infrastructure/Persistence
 
-`InMemoryMessageStore : IMessageStore` — the in-process implementation used until `MiniVerine.Postgresql` lands. Recovery on `Start`, duplicate-id rejection, and the transactional outbox are exercised against this store first; the ports are the contract, this is the reference.
+`InMemoryMessageStore : IMessageStore` — the in-process implementation used until `Hansom.Postgresql` lands. Recovery on `Start`, duplicate-id rejection, and the transactional outbox are exercised against this store first; the ports are the contract, this is the reference.
 
-Prove-with: `in_memory_message_store_durability_*` facts in `tests/MiniVerine.Tests/Infrastructure/Persistence/InMemoryMessageStoreDurabilityTests.cs` (recover after successful `Start`, throwing `Start` leaves no outgoing row, duplicate `IdempotencyKey` is rejected).
+Prove-with: `in_memory_message_store_durability_*` facts in `tests/Hansom.Tests/Infrastructure/Persistence/InMemoryMessageStoreDurabilityTests.cs` (recover after successful `Start`, throwing `Start` leaves no outgoing row, duplicate `IdempotencyKey` is rejected).
 
 ### Application/Serialization
 
 `ISerializer` port for `Envelope` body ↔ bytes. The caller resolves `MessageType` to CLR `Type` via `MessageTypeCatalog` before reaching the serializer; unknown CLR types are handed off to `IMissingHandler` at the Transport layer, not crashed here. Polymorphic payloads and contract versioning are the natural follow-ups once a transport carries discriminators.
 
-Prove-with: `serialize_body_then_deserialize_body_round_trips_to_equivalent_object`, `serialize_then_deserialize_envelope_preserves_headers_and_content_type`, `serialize_body_with_null_body_throws_argument_null_exception` in `tests/MiniVerine.Tests/Application/Serialization/SerializerContractTests.cs`.
+Prove-with: `serialize_body_then_deserialize_body_round_trips_to_equivalent_object`, `serialize_then_deserialize_envelope_preserves_headers_and_content_type`, `serialize_body_with_null_body_throws_argument_null_exception` in `tests/Hansom.Tests/Application/Serialization/SerializerContractTests.cs`.
 
 ### Infrastructure/Serialization
 
-`JsonSerializer : ISerializer` — `System.Text.Json` implementation. Default content type `application/json`; the caller is responsible for setting `Envelope.ContentType` on the surrounding `Envelope`. Property-name matching is case-insensitive; output is compact. Adapter projects (`MiniVerine.RabbitMQ`, `MiniVerine.Http`) will plug their own content-type negotiation on top of this same port.
+`JsonSerializer : ISerializer` — `System.Text.Json` implementation. Default content type `application/json`; the caller is responsible for setting `Envelope.ContentType` on the surrounding `Envelope`. Property-name matching is case-insensitive; output is compact. Adapter projects (`Hansom.RabbitMQ`, `Hansom.Http`) will plug their own content-type negotiation on top of this same port.
 
 Prove-with: shared with `Application/Serialization` — the contract tests cover both sides.
 
@@ -170,27 +170,27 @@ Folders that are **Plan-only** are listed in a sensible build order. Do one slic
 
 ### Infrastructure
 
-10. ~~**Hosting**~~ — done. Listeners and durability agents plug into `MiniVerineHostedService` from LocalQueues and Persistence.
+10. ~~**Hosting**~~ — done. Listeners and durability agents plug into `HansomHostedService` from LocalQueues and Persistence.
 11. ~~**Serialization**~~ — done. `ISerializer` port + `System.Text.Json` impl; polymorphic discriminators and contract versioning are follow-ups once a transport carries them.
 12. ~~**LocalQueues**~~ — done. Bounded back-pressure, queue-invoked handler cascades, and durable mode (this folder + Persistence) are follow-ups.
 13. ~~**Transports**~~ — done. `ITransport` port (`Application/Transports`) + `LocalTransport` (`local://`, `Infrastructure/Transports`); TCP, RabbitMQ, and HTTP wire transports follow in their adapter projects.
-14. ~~**Persistence**~~ — done. Ports (`Application/Persistence`) + in-memory store (`Infrastructure/Persistence`); Npgsql adapter follows in `MiniVerine.Postgresql`.
-15. ~~**Observability**~~ — done. `MiniVerineDiagnostics` static surface (`ActivitySource`, `Meter`, `miniverine.failures` counter) + `ObservabilityAttemptObserver` (per-attempt span + counter on throw); OTel SDK exporters, `ILogger` correlation scopes, in-flight gauge, latency histogram, health checks, `describe-routing`, and redacted envelope logging are follow-ups in this folder.
+14. ~~**Persistence**~~ — done. Ports (`Application/Persistence`) + in-memory store (`Infrastructure/Persistence`); Npgsql adapter follows in `Hansom.Postgresql`.
+15. ~~**Observability**~~ — done. `HansomDiagnostics` static surface (`ActivitySource`, `Meter`, `hansom.failures` counter) + `ObservabilityAttemptObserver` (per-attempt span + counter on throw); OTel SDK exporters, `ILogger` correlation scopes, in-flight gauge, latency histogram, health checks, `describe-routing`, and redacted envelope logging are follow-ups in this folder.
 
 ### Adapters and sample
 
-16. **MiniVerine.Postgresql** — Marten/Npgsql implementation of persistence ports.
-17. **MiniVerine.RabbitMQ** — broker transport.
-18. **MiniVerine.Http** — HTTP front door into the same Execution pipeline.
-19. **Helpdesk sample** — `PlaceOrder` / `ChargePayment` / `OrderSaga` against MiniVerine, matching `WolverineTest`.
-20. **Tests** — `MiniVerine.Tests` for domain (naming, catalog lookup, saga identity, envelope rules). `Helpdesk.Tests` for conversations once the bus exists.
+16. **Hansom.Postgresql** — Marten/Npgsql implementation of persistence ports.
+17. **Hansom.RabbitMQ** — broker transport.
+18. **Hansom.Http** — HTTP front door into the same Execution pipeline.
+19. **Helpdesk sample** — `PlaceOrder` / `ChargePayment` / `OrderSaga` against Hansom, matching `WolverineTest`.
+20. **Tests** — `Hansom.Tests` for domain (naming, catalog lookup, saga identity, envelope rules). `Helpdesk.Tests` for conversations once the bus exists.
 
 ## Start in this order
 
-1. `src/MiniVerine/Domain/Envelope/Envelope.cs` — the unit of work
-2. `src/MiniVerine/Domain/Messaging/MessageTypeNaming.cs` and `MessageTypeCatalog.cs` — wire names
-3. `src/MiniVerine/Domain/Sagas/SagaIdentityNaming.cs`, `TimeoutAttribute.cs`, `Saga.cs` — identity and inert state
-4. `src/MiniVerine/Domain/Envelope/Validators/EnvelopeValidator.cs` — composition, not ownership
+1. `src/Hansom/Domain/Envelope/Envelope.cs` — the unit of work
+2. `src/Hansom/Domain/Messaging/MessageTypeNaming.cs` and `MessageTypeCatalog.cs` — wire names
+3. `src/Hansom/Domain/Sagas/SagaIdentityNaming.cs`, `TimeoutAttribute.cs`, `Saga.cs` — identity and inert state
+4. `src/Hansom/Domain/Envelope/Validators/EnvelopeValidator.cs` — composition, not ownership
 5. Any `*Plan.cs` in Application — the next slices
 6. `samples/Helpdesk/src/Helpdesk.Host/Program.cs` — host glue only
 7. Sibling `WolverineTest` — the finished pipeline this clone is aiming at
@@ -198,7 +198,7 @@ Folders that are **Plan-only** are listed in a sensible build order. Do one slic
 ## Build
 
 ```bash
-dotnet build src/MiniVerine
+dotnet build src/Hansom
 dotnet run --project samples/Helpdesk/src/Helpdesk.Host
 dotnet test
 ```
@@ -216,7 +216,7 @@ If you already know **MediatR**, **clean architecture**, and **DDD**, several qu
 <details>
 <summary>What is a message in this project, versus a method call?</summary>
 
-A message is a piece of data (a `record` such as `PlaceOrder`) that *might* be handled later, on another thread, after a retry, or after a process restart. MiniVerine wraps that body in `Message` (`Domain/Messaging/ValueObjects/Message.cs`): the CLR object, not JSON.
+A message is a piece of data (a `record` such as `PlaceOrder`) that *might* be handled later, on another thread, after a retry, or after a process restart. Hansom wraps that body in `Message` (`Domain/Messaging/ValueObjects/Message.cs`): the CLR object, not JSON.
 
 A method call is “run this now, on my stack, throw if it fails.” If `OrderSaga.Start` called `ChargePaymentHandler.Handle(...)` directly, you would skip the queue, the retry policy, the inbox, and the chance to load saga state again. Event-driven code decides *what happened* (or what should happen next) and emits a message. It does not reach into the next step.
 
@@ -227,11 +227,11 @@ Helpdesk does not contain those records yet. The types live in Messaging so Enve
 <details>
 <summary>What is an Envelope, and why isn’t the record enough?</summary>
 
-Your `record` is the body. MiniVerine’s unit of work is `Envelope`: body plus `EnvelopeId`, `MessageType`, `Destination`, correlation / conversation / saga ids, `SentAt`, `DeliverBy`, `Headers`, `ContentType`, `Attempts`, and `EnvelopeData` (bytes, empty until Serialization).
+Your `record` is the body. Hansom’s unit of work is `Envelope`: body plus `EnvelopeId`, `MessageType`, `Destination`, correlation / conversation / saga ids, `SentAt`, `DeliverBy`, `Headers`, `ContentType`, `Attempts`, and `EnvelopeData` (bytes, empty until Serialization).
 
 Retries will reuse the **same** envelope (`Attempts` 1, then 2, then 3). They are not three new publishes. Conversation ids are why a future `TrackActivity` can wait for PlaceOrder + ChargePayment + PaymentCharged as one conversation. The inbox will store envelopes, not bare records, so a restart can continue the same attempt count.
 
-See `src/MiniVerine/Domain/Envelope/Envelope.cs`.
+See `src/Hansom/Domain/Envelope/Envelope.cs`.
 
 </details>
 
@@ -291,7 +291,7 @@ Identity is a contract on the message, not a vibe. See `SagaIdentityNaming.For(o
 <details>
 <summary>Why is timeout an attribute, not TimeoutMessage or Task.Delay?</summary>
 
-Wolverine uses `OrderTimeout : TimeoutMessage(1.Minutes())`. Attribute arguments cannot be `TimeSpan`, so MiniVerine uses `[Timeout(Minutes = 1)]` on the message type: integers, then `Delay` as `TimeSpan`.
+Wolverine uses `OrderTimeout : TimeoutMessage(1.Minutes())`. Attribute arguments cannot be `TimeSpan`, so Hansom uses `[Timeout(Minutes = 1)]` on the message type: integers, then `Delay` as `TimeSpan`.
 
 The saga class is inert state (`MarkCompleted` / `IsCompleted`). It does not run a timer. Scheduling sets `Envelope.DeliverBy` from `SentAt + Delay` and parks the envelope until `PlayDue`.
 
@@ -302,7 +302,7 @@ The saga class is inert state (`MarkCompleted` / `IsCompleted`). It does not run
 <details>
 <summary>Why does Saga have no Id? Why is MarkCompleted only a flag?</summary>
 
-`OrderSaga` will declare `public int? Id { get; set; }`. Other sagas will use `Guid` or `string`. An `Id` on the MiniVerine base would force one CLR type on every saga.
+`OrderSaga` will declare `public int? Id { get; set; }`. Other sagas will use `Guid` or `string`. An `Id` on the Hansom base would force one CLR type on every saga.
 
 `MarkCompleted()` sets `IsCompleted`. It does not delete a Marten document. Application/Sagas treats the flag as “this instance is finished” (later Handle messages are a unified miss). Persistence will own the durable row. Domain/Sagas is data.
 
@@ -331,13 +331,13 @@ The empty `sealed class` exists so the folder is a compilable C# project, not a 
 <details>
 <summary>How does this sit with clean architecture (onion) and DDD?</summary>
 
-Inner layers do not depend on outer ones. Domain does not know HTTP or Postgres. Application orchestrates. Infrastructure implements ports. Adapters (`MiniVerine.Postgresql`, `.RabbitMQ`, `.Http`) are separate projects so core cannot take those package references.
+Inner layers do not depend on outer ones. Domain does not know HTTP or Postgres. Application orchestrates. Infrastructure implements ports. Adapters (`Hansom.Postgresql`, `.RabbitMQ`, `.Http`) are separate projects so core cannot take those package references.
 
 - **Messages** are the language of the domain. They are not a controller DTO and not a SQL row.
 - **Handlers / saga methods** (planned in Helpdesk.Application) are use cases. `OrderSaga.Start` must not new up `ChargePaymentHandler`.
-- **Helpdesk.Host** is the composition root. Helpdesk.Domain must not reference MiniVerine.
+- **Helpdesk.Host** is the composition root. Helpdesk.Domain must not reference Hansom.
 
-A **saga is a process manager**, not an aggregate. MiniVerine’s `Saga` does not enforce “an order’s line items.” It tracks “this instance is open until something calls `MarkCompleted`.” The timeout is a message in time, not a `DateTime` field you poll.
+A **saga is a process manager**, not an aggregate. Hansom’s `Saga` does not enforce “an order’s line items.” It tracks “this instance is open until something calls `MarkCompleted`.” The timeout is a message in time, not a `DateTime` field you poll.
 
 This repo is not a full domain model with repositories. The lesson is the messaging shape that DDD + onion usually want, plus a bus you own one folder at a time.
 
@@ -363,13 +363,13 @@ Rule of thumb: **Invoke = I need this handler done before I continue. Publish = 
 <details>
 <summary>(planned) How does this compare to MediatR?</summary>
 
-**`InvokeAsync` is MediatR’s `Send`.** One message in, handler runs now, caller waits. MiniVerine will find `Handle(PlaceOrder)` by convention (`Application/Discovery`) instead of `IRequestHandler<PlaceOrder>`.
+**`InvokeAsync` is MediatR’s `Send`.** One message in, handler runs now, caller waits. Hansom will find `Handle(PlaceOrder)` by convention (`Application/Discovery`) instead of `IRequestHandler<PlaceOrder>`.
 
 **`PublishAsync` is not MediatR.** The work can retry, land on another thread, or survive a restart. MediatR `INotification` still is not a queue, an outbox, or a saga.
 
 The trap is to `InvokeAsync` the next step from inside a handler (`IMediator.Send` the next command). That keeps you on one stack, with stale saga state, and no outbox. Return `ChargePayment` and let the bus load `OrderSaga` again (`Application/Cascades`).
 
-| You know | In MiniVerine (planned) |
+| You know | In Hansom (planned) |
 | --- | --- |
 | `IMediator.Send` / `IRequestHandler<T>` | `InvokeAsync` |
 | `IMediator.Publish` / `INotification` | still in-process; not a durable queue |
@@ -398,7 +398,7 @@ The dual-write bug is: write business state, then publish, and crash between the
 
 **Inbox:** write the incoming envelope *before* the handler runs; mark handled only after success. Kill the host mid-retry and the same envelope is recovered.
 
-Outbox: I will not forget work I decided to emit. Inbox: I will not forget work that arrived. Ports live in `Infrastructure/Persistence`; Npgsql in `MiniVerine.Postgresql`.
+Outbox: I will not forget work I decided to emit. Inbox: I will not forget work that arrived. Ports live in `Infrastructure/Persistence`; Npgsql in `Hansom.Postgresql`.
 
 </details>
 
@@ -456,8 +456,8 @@ Once `OrderSaga.Start(PlaceOrder)` is wired with a real saga identity, `PlaceOrd
 <details>
 <summary>What is this repo deliberately not doing yet?</summary>
 
-No running bus, no RabbitMQ, no HTTP, no Postgres inbox. Helpdesk.Host only calls `UseMiniVerine()` and starts/stops. There are no MiniVerine.Tests for Envelope, Messaging, or Sagas yet.
+No running bus, no RabbitMQ, no HTTP, no Postgres inbox. Helpdesk.Host only calls `UseHansom()` and starts/stops. There are no Hansom.Tests for Envelope, Messaging, or Sagas yet.
 
-The next slices are Application/Discovery through Tracking, then Serialization, LocalQueues, Persistence. External transport and HTTP come after the in-process conversation works. Until then, `WolverineTest` is the finished sample of the pipeline MiniVerine is cloning.
+The next slices are Application/Discovery through Tracking, then Serialization, LocalQueues, Persistence. External transport and HTTP come after the in-process conversation works. Until then, `WolverineTest` is the finished sample of the pipeline Hansom is cloning.
 
 </details>
