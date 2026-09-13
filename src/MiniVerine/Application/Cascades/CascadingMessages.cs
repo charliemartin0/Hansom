@@ -27,6 +27,13 @@ public static class CascadingMessages
             case Task task:
                 AppendCompletedTask(outgoing, task);
                 return;
+            case ValueTask valueTask:
+                // Non-consuming AsTask: sync results and completed Task-backed values
+                // unpack here; incomplete values are skipped by AppendCompletedTask,
+                // mirroring the Task arm. The Executor awaits ValueTask returns before
+                // this point, so the handler path always arrives complete.
+                AppendCompletedTask(outgoing, TaskResultAccessor.AsTask(valueTask));
+                return;
             case string:
                 outgoing.Add(value);
                 return;
@@ -52,6 +59,14 @@ public static class CascadingMessages
 
                 return;
             default:
+                // ValueTask<T> and ValueTask are unrelated structs, so a boxed generic
+                // ValueTask cannot match a case pattern; route it via the runtime type.
+                if (TaskResultAccessor.IsBoxedValueTask(value))
+                {
+                    AppendCompletedTask(outgoing, TaskResultAccessor.AsTask(value));
+                    return;
+                }
+
                 outgoing.Add(value);
                 return;
         }

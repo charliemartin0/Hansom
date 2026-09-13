@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.ExceptionServices;
+using MiniVerine.Application.Cascades;
 using MiniVerine.Application.Discovery;
 using MiniVerine.Application.Middleware;
 using MiniVerine.Application.Tracking;
@@ -211,6 +212,15 @@ public sealed class Executor
         if (result is Task task)
         {
             await task;
+        }
+        else if (TaskResultAccessor.IsBoxedValueTask(result))
+        {
+            // ValueTask returns are not awaited by pattern (ValueTask<T> and ValueTask
+            // are unrelated structs); convert non-consumingly and await the backing task
+            // so the cascade unpack below sees a completed Task.
+            Task asTask = TaskResultAccessor.AsTask(result!);
+            await asTask;
+            return asTask;
         }
 
         return result;
