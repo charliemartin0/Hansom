@@ -40,4 +40,64 @@ public static class PostgresSchema
         await using NpgsqlCommand cmd = new NpgsqlCommand(sql, conn);
         await cmd.ExecuteNonQueryAsync(ct);
     }
+
+    /// <summary>
+    /// Create the <c>hansom_inbox</c> table and its in-flight index if they do not already exist.
+    /// <para>
+    /// Shape: <c>(id UUID PK, status TEXT CHECK IN ('in_flight','processed'),
+    /// acquired_at TIMESTAMPTZ DEFAULT now())</c>. The status check gives TryAcquireAsync's
+    /// <c>INSERT ... ON CONFLICT DO NOTHING</c> its two outcomes: a fresh in-flight row means
+    /// acquired, a conflicting processed or in-flight id means already handled. The partial index
+    /// keeps <c>LoadInFlightAsync</c> scans cheap.
+    /// </para>
+    /// </summary>
+    public static async ValueTask EnsureInboxTableAsync(NpgsqlDataSource dataSource, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(dataSource);
+
+        const string sql = """
+            CREATE TABLE IF NOT EXISTS hansom_inbox (
+                id UUID PRIMARY KEY,
+                status TEXT NOT NULL CHECK (status IN ('in_flight', 'processed')),
+                acquired_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+
+            CREATE INDEX IF NOT EXISTS hansom_inbox_in_flight_idx
+                ON hansom_inbox (acquired_at)
+                WHERE status = 'in_flight';
+            """;
+
+        await using NpgsqlConnection conn = await dataSource.OpenConnectionAsync(ct);
+        await using NpgsqlCommand cmd = new NpgsqlCommand(sql, conn);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Create the <c>hansom_dead_letter</c> table if it does not already exist.
+    /// <para>
+    /// Shape: <c>(id UUID PK, envelope JSONB, cause_type TEXT, cause_message TEXT,
+    /// cause_stack TEXT NULL, recorded_at TIMESTAMPTZ DEFAULT now())</c>. The id is the primary
+    /// key so re-recording the same envelope overwrites, matching the in-memory store. The cause
+    /// columns preserve what failed; <c>ListAsync</c> reconstructs a best-effort Exception from them.
+    /// </para>
+    /// </summary>
+    public static async ValueTask EnsureDeadLetterTableAsync(NpgsqlDataSource dataSource, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(dataSource);
+
+        const string sql = """
+            CREATE TABLE IF NOT EXISTS hansom_dead_letter (
+                id UUID PRIMARY KEY,
+                envelope JSONB NOT NULL,
+                cause_type TEXT NOT NULL,
+                cause_message TEXT NOT NULL,
+                cause_stack TEXT NULL,
+                recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            """;
+
+        await using NpgsqlConnection conn = await dataSource.OpenConnectionAsync(ct);
+        await using NpgsqlCommand cmd = new NpgsqlCommand(sql, conn);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
 }
