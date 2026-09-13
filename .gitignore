@@ -23,3 +23,6 @@ opencode.json
 codemap.md
 # Planning artifacts from /plan-ceo-review and /plan-eng-review
 specs/
+
+# OpenCode runtime state (queue, session, undo logs) — regenerable, not part of the repo
+.opencode/
