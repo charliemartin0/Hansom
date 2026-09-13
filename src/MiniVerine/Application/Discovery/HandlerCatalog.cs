@@ -20,6 +20,12 @@ public sealed class HandlerCatalog
     private readonly HashSet<string> _excludedNamespaces = new(StringComparer.Ordinal);
     private readonly HashSet<Type> _excludedTypes = [];
 
+    /// <summary>
+    /// Message type → handlers, rebuilt at the end of every successful Scan so the hot
+    /// lookup path is one dictionary hit instead of a filter over the handler list.
+    /// </summary>
+    internal Dictionary<Type, DiscoveredHandler[]> _byMessageType = [];
+
     public IReadOnlyList<DiscoveredHandler> Handlers => _handlers;
 
     public MessageTypeCatalog MessageTypes { get; } = new();
@@ -75,6 +81,10 @@ public sealed class HandlerCatalog
                 _handlers.Add(handler);
                 MessageTypes.Register(handler.MessageClrType);
             }
+
+            _byMessageType = _handlers
+                .GroupBy(handler => handler.MessageClrType)
+                .ToDictionary(group => group.Key, group => group.ToArray());
         }
         catch
         {
@@ -104,10 +114,9 @@ public sealed class HandlerCatalog
     public HandlerLookup Lookup(Type messageType)
     {
         ArgumentNullException.ThrowIfNull(messageType);
-        DiscoveredHandler[] found = [.. _handlers.Where(handler => handler.MessageClrType == messageType)];
-        return found.Length == 0
-            ? new MissingHandler(messageType)
-            : new FoundHandlers(found);
+        return _byMessageType.TryGetValue(messageType, out DiscoveredHandler[]? found)
+            ? new FoundHandlers(found)
+            : new MissingHandler(messageType);
     }
 
     private bool ShouldScan(Type handlerType)

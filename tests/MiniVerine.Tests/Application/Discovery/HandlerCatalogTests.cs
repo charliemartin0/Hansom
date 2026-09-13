@@ -96,6 +96,26 @@ public sealed class HandlerCatalogTests
     }
 
     [Fact]
+    public void handler_catalog_lookup_is_backed_by_a_rebuilt_dictionary_after_scan()
+    {
+        var catalog = new HandlerCatalog();
+        catalog.Scan(typeof(PlaceOrderHandler));
+        catalog.Scan(typeof(ThingHappenedConsumer));
+
+        // The dict is populated with one key per scanned message type.
+        Assert.Equal(2, catalog._byMessageType.Count);
+        Assert.Contains(typeof(PlaceOrder), catalog._byMessageType.Keys);
+        Assert.Contains(typeof(ThingHappened), catalog._byMessageType.Keys);
+
+        // Two lookups return the same stored array — the dict is the lookup, not a filter.
+        IReadOnlyList<DiscoveredHandler> first =
+            Assert.IsType<FoundHandlers>(catalog.Lookup(typeof(PlaceOrder))).Handlers;
+        IReadOnlyList<DiscoveredHandler> second =
+            Assert.IsType<FoundHandlers>(catalog.Lookup(typeof(PlaceOrder))).Handlers;
+        Assert.Same(first, second);
+    }
+
+    [Fact]
     public void scan_registers_discovered_message_types_on_the_message_type_catalog()
     {
         var catalog = new HandlerCatalog();
