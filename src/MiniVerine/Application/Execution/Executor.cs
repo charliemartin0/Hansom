@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.ExceptionServices;
+using MiniVerine.Application.Bus;
 using MiniVerine.Application.Cascades;
 using MiniVerine.Application.Discovery;
 using MiniVerine.Application.Middleware;
@@ -24,6 +25,7 @@ public sealed class Executor
     private readonly MiddlewareCatalog _middleware;
     private readonly IScheduledEnvelopeHold? _scheduled;
     private readonly IHandlerAttemptObserver? _attempts;
+    private readonly Func<IPublishEnqueuer>? _enqueuer;
 
     public Executor(
         ErrorPolicyCatalog policies,
@@ -31,7 +33,8 @@ public sealed class Executor
         IMissingHandler? missingHandler = null,
         MiddlewareCatalog? middleware = null,
         IScheduledEnvelopeHold? scheduled = null,
-        IHandlerAttemptObserver? attempts = null)
+        IHandlerAttemptObserver? attempts = null,
+        Func<IPublishEnqueuer>? enqueuer = null)
     {
         ArgumentNullException.ThrowIfNull(policies);
         _policies = policies;
@@ -40,6 +43,7 @@ public sealed class Executor
         _middleware = middleware ?? new MiddlewareCatalog();
         _scheduled = scheduled;
         _attempts = attempts;
+        _enqueuer = enqueuer;
     }
 
     public Task<object?> InvokeAsync(
@@ -177,6 +181,16 @@ public sealed class Executor
                 }
 
                 ParkScheduledRetry(current, retry);
+                return null;
+            case Requeue:
+                if (_enqueuer is null)
+                {
+                    throw new HandlerFault(fault);
+                }
+
+                _enqueuer().Enqueue(current);
+                return null;
+            case Discard:
                 return null;
             default:
                 throw new HandlerFault(fault);

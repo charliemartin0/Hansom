@@ -59,7 +59,8 @@ public sealed class Mediator : IMessageBus
         _executor = executor ?? new Executor(
             policies ?? new ErrorPolicyCatalog(),
             scheduled: scheduled,
-            attempts: new SessionAttemptObserver(this));
+            attempts: new SessionAttemptObserver(this),
+            enqueuer: () => _enqueuer);
         if (attempts is AttemptObserverHub hub)
         {
             // The host shares one Executor; bind this session logger so tracked

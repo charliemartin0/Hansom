@@ -58,7 +58,8 @@ public static class MiniVerineHostBuilderExtensions
             missingHandler: services.GetService<IMissingHandler>(),
             middleware: services.GetRequiredService<MiddlewareCatalog>(),
             scheduled: services.GetRequiredService<IScheduledEnvelopeHold>(),
-            attempts: services.GetRequiredService<IHandlerAttemptObserver>()));
+            attempts: services.GetRequiredService<IHandlerAttemptObserver>(),
+            enqueuer: () => services.GetRequiredService<IPublishEnqueuer>()));
         builder.Services.AddSingleton<MessageDelivery>(services => new MessageDelivery(
             services.GetRequiredService<HandlerCatalog>(),
             services.GetRequiredService<Executor>(),
