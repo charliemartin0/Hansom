@@ -1,37 +1,34 @@
 # Hansom
 
-A Wolverine-shaped in-process bus, built in slices. This repo sits next to `WolverineTest` (the real-Wolverine learning sample), not as a dependency.
+A Wolverine-shaped in-process bus for .NET, built one slice at a time. Onion-architecture kernel, in-memory defaults, broker adapters in sibling projects. The shape is borrowed from Wolverine; the catalog is not cloned.
 
-**Inspectable kernel:** no source-gen, ports-first persistence, named errors. Rabbit/HTTP/cron are ignorable adapters. Do not treat this README’s slice list as permission to clone Wolverine’s full catalog.
+## Why
 
-Read the **code that exists**, then use the questions below. Answers are collapsed so you can try to explain each one yourself. Questions marked **(planned)** are in `*Plan` comments only — Hansom does not run that pipeline yet. Open `WolverineTest` when you want to see the finished conversation.
+Most .NET apps that need messaging end up choosing between two extremes. A thin MediatR that has no opinion about retries, scheduling, or persistence — and a full MassTransit / NServiceBus / Wolverine stack that ships every transport, codegen, and integration at once. Hansom is the middle path. It borrows the *shape* of Wolverine — handler catalog, in-process `Invoke`/`Publish`, cascading messages, envelope-based execution — and stops at the kernel. Broker adapters are separate packages. The onion architecture is enforced. Every slice ships with prove-with tests.
 
-## What you should feel
+The project started as a learning exercise. Twenty-six slices in, the kernel is real, the slices are tested, and the design choices (no source generation, strict layering, slice-driven delivery) make it worth a name and a roadmap of its own.
 
-Handlers never call each other. They return **messages**. The bus wraps each message in an **Envelope** and either runs it now (`Invoke`) or lets go (`Publish`). Time, retries, and “the payment never came” are messages too.
+## Status
 
-Postgres, Rabbit, and HTTP are adapters. Core must not know those packages. Domain has no I/O. Application has ports only. Infrastructure composes and implements.
+The kernel ships. The broker adapters are scaffolds. There is no 1.0 release yet.
 
-```mermaid
-sequenceDiagram
-    participant Program
-    participant Saga as OrderSaga
-    participant Store as saga store
-    participant Payments as payments queue
-    participant Clock as scheduled timeout
+| Layer | Status |
+| --- | --- |
+| Kernel (`src/Hansom`) | Ships: handler discovery, in-process `Invoke`/`Publish`, cascading messages, scheduled envelopes, instance sagas, in-memory queues + transport, in-memory inbox/outbox/dead-letter/saga stores, JSON serialization, observability hooks. |
+| Persistence | In-memory stores only. PostgreSQL, RabbitMQ, and HTTP adapter projects exist as empty scaffolds ready to be filled. |
+| Tests | 280 kernel facts + 3 sample facts. xUnit, snake_case behaviour sentences, small fakes (no broker, no DB). |
+| Sample | `Helpdesk` — an `OrderSaga` exercised end-to-end against the in-memory kernel. |
+| Release | Not yet. Roadmap below. |
 
-    Note over Program,Clock: Target conversation. Application kernel exists plus Infrastructure/Hosting and LocalQueues. Durable store and Helpdesk messages are still planned.
+## Quickstart
 
-    Program->>Saga: Publish PlaceOrder
-    Saga->>Store: commit saga and ChargePayment envelope
-    Saga-->>Payments: cascade ChargePayment
-    Saga-->>Clock: cascade OrderTimeout at T plus 1m
-    Payments->>Payments: fail, retry, succeed
-    Payments->>Saga: cascade PaymentCharged
-    Saga->>Store: MarkCompleted
-    Clock->>Saga: OrderTimeout later
-    Saga->>Saga: NotFound already done
+```bash
+dotnet build src/Hansom
+dotnet test
+dotnet run --project samples/Helpdesk/src/Helpdesk.Host
 ```
+
+The Helpdesk sample runs against the in-memory kernel: instance saga, local queues, in-memory store. It is the smallest conversation Hansom can have. Everything in the roadmap is "more of the same, on real infrastructure."
 
 ## Layout
 
@@ -41,423 +38,80 @@ Hansom/
     Domain/                      Envelope, wire names, saga identity, named errors — no I/O
     Application/                 Invoke, cascades, routing, execution, sagas — ports only
     Infrastructure/              host, JSON, local queues, transport/persistence ports
-  src/Hansom.Postgresql/     persistence adapter (empty)
-  src/Hansom.RabbitMQ/        broker adapter (empty)
-  src/Hansom.Http/           HTTP front door (empty)
+  src/Hansom.Postgresql/         persistence adapter (empty scaffold)
+  src/Hansom.RabbitMQ/           broker adapter (empty scaffold)
+  src/Hansom.Http/               HTTP front door (empty scaffold)
   samples/Helpdesk/src/
     Helpdesk.Domain/             entities / value objects — no Hansom, no infra
-    Helpdesk.Application/       messages + handlers — Domain + Hansom
-    Helpdesk.Infrastructure/      Marten/Npgsql wiring — Application + Hansom.Postgresql
-    Helpdesk.Host/              composition root (Generic Host)
-  tests/Hansom.Tests
-  tests/Helpdesk.Tests
+    Helpdesk.Application/        messages + handlers — Domain + Hansom
+    Helpdesk.Infrastructure/     in-memory wiring — Application + Hansom
+    Helpdesk.Host/               composition root
+  tests/Hansom.Tests/            xUnit facts, small fakes
+  tests/Helpdesk.Tests/          sample facts
 ```
 
-Each Hansom feature folder has a `*Plan` class. The XML comments are the spec: **Put here**, **Do not put here**, **Prove with**. Core must not reference the adapter projects. Npgsql stays in `Hansom.Postgresql`; Rabbit in `Hansom.RabbitMQ`; HTTP in `Hansom.Http`.
+`src/Hansom` does not `ProjectReference` the adapter projects. Npgsql stays in `Hansom.Postgresql`; Rabbit in `Hansom.RabbitMQ`; HTTP in `Hansom.Http`. The dependency direction is enforced by project rules, not by convention.
 
-Helpdesk.Domain has no Hansom and no infra. Helpdesk.Application may reference Hansom. Helpdesk.Infrastructure may reference Hansom.Postgresql. Helpdesk.Host is the composition root.
+## What's done
 
-## What is done
+Twenty-six slices have landed. The highlights, in order:
 
-### Domain/Envelope
+- **A1+A2** unified envelope delivery
+- **DX #1** `UseHansom` single-line composition root
+- **DX #2** reject unknown handler slots at startup
+- **Helpdesk** end-to-end sample with `OrderSaga`
+- **ScheduledCascade** API
+- **OrderTimeout** in-progress saga using scheduled envelopes
+- **Queue/transport saga dispatch** fix
+- **Perf #1** cached invoker (no reflection on the hot path)
+- **Perf #2** catalog dictionary (`O(1)` type → handlers)
+- **Perf #3** `Task<T>` unpack in the executor
+- **A3+A4** onion cleanup
+- **A5** dead-letter wiring
+- **A6** validators at host start
+- **A7** Requeue / Discard switch arms on the executor
 
-The wrapper that travels. `Envelope` plus value objects (id, destination, correlation, conversation, clocks, headers, content type, attempts, bytes) and FluentValidation. Envelope **carries** `Message`, `MessageType`, and `SagaId`; it does not own those types.
+The codemap (regenerable from the slice history) records every slice.
 
-### Domain/Messaging
+## What's next
 
-How a CLR type is named on the wire.
+Honest about order. Not every item ships next. Each is a slice: prove-with test first, then the smallest type that makes it pass.
 
-- `[MessageIdentity]` optional alias
-- `MessageTypeNaming` — attribute wins, otherwise `FullName`
-- `MessageTypeCatalog` — register, `GetName`, `Lookup`
-- `KnownMessageType` / `UnknownMessageType` — unknown names are a result, not an exception
-- `Message` / `MessageType` value objects and validators
+1. **PostgreSQL adapter** — durable inbox / outbox / saga stores against Npgsql. Ports exist; the adapter fills them.
+2. **RabbitMQ adapter** — broker transport + durable subscriptions.
+3. **HTTP adapter** — request/response across processes against the same execution pipeline.
+4. **First-party logging middleware** — structured logs around handler invocation.
+5. **Validator middleware** — pluggable handler-input validation.
+6. **Outbox middleware** — kernel-level transactional outbox over the persistence ports.
+7. **Polymorphic serialization** — discriminator-aware JSON for heterogeneous payloads.
+8. **Observability polish** — OTel exporters, in-flight gauges, latency histograms beyond the static `ActivitySource`/`Meter`.
+9. **1.0** — once the kernel is documented, one broker adapter is shipped, and the slice history reads clean.
 
-### Domain/Sagas
+## Inspiration
 
-Identity and timeout as data, not a running timer.
+Hansom borrows the *shape* of [Wolverine](https://github.com/JasperFx/wolverine) by Jeremy Miller — handler catalog, envelope model, in-process `Invoke`/`Publish`, cascading messages. It does not clone Wolverine's catalog. There is no source generation, no Marten / EF integration, no in-core broker transports. The kernel stops at "Wolverine-shaped in-process" and refuses to grow beyond what the test suite proves.
 
-- `SagaId` (empty string = not part of a saga)
-- `[SagaIdentity]` on a message property
-- `SagaIdentityNaming` — `[SagaIdentity]`, then `{SagaType}Id`, then `Id`; `CanCorrelate(Type, Type)` is the same walk without a message instance
-- `[Timeout(Minutes = 1)]` delay metadata (`TimeSpan Delay`)
-- `Saga` base — `MarkCompleted` / `IsCompleted` only; no `Id` on the base
-- Validators for `SagaId` and `[Timeout]`
+Phoenix credits Rails. Hansom credits Wolverine.
 
-Prove-with for this folder: given a message, you can say which saga instance it belongs to without I/O.
+## Project rules
 
-### Domain/Errors
+- One slice at a time. No stacked PRs.
+- Every slice ships with prove-with tests.
+- `src/Hansom` does not `ProjectReference` any adapter.
+- Branch from `origin/main`, PR to `main`. The slice is the unit of progress, not the commit.
 
-Named recovery vocabulary. `ErrorAction` (`Retry`, `RetryWithCooldown`, `MoveToErrorQueue`, `Requeue`, `ScheduleRetry`, `Discard`) and lookup results (`FoundErrorPolicy` / `MissingErrorPolicy`). Application/Execution owns the catalog, ports, and applying the chain.
-
-- Validators for cooldown delay (≥ 0), `ScheduleRetry` delay (> 0), non-empty found chains, and missing exception type
-- Catalog registration does not run these validators yet
-- `ValueObjects/` folders live under Domain only
-
-### Application/Middleware
-
-Russian doll around Execution. `MiddlewareCatalog` holds outer (once per handler Invoke) and inner (once per attempt) instance wrappers. Targets: global, message CLR type, or handler CLR type. `IMessageMiddleware` must call `next` exactly once (`MiddlewareNextViolation` otherwise). Executor applies both layers; missing-handler is not wrapped. No first-party logging/validation/outbox middleware.
-
-Prove-with: a registered wrapper runs around `Handle` without the handler type knowing it exists.
-
-### Application/Scheduling
-
-Time is a message. `[Timeout]`, `DeliveryOptions` (delay or UTC `Until`), and `ScheduleRetry(delay)` stamp `Envelope.DeliverBy` and park in an in-memory hold. `IMessageScheduler.PlayDue(asOf)` drains due envelopes through Execution on the caller’s thread. Invoke is always now; delayed Invoke and `ScheduleRetry` on Invoke are named errors. No timer, no durable store.
-
-Prove-with: a 1-minute timeout can be played now without `Task.Delay`.
-
-### Application/Sagas
-
-Process-manager runtime on `Invoke`. `ISagaStore` loads/saves by saga type and `SagaId`. In-memory store clones on Save and Load. Mediator correlates, runs `Start` / `Handle`, and on miss runs `NotFound` (not a catalog handler) or throws `SagaInstanceNotFound`. Duplicate `Start` is `SagaAlreadyExists`. Uncorrelatable saga methods fail `Scan` with `InvalidHandlerSignature`.
-
-Prove-with: PaymentCharged loads the same instance Start created; after complete, timeout hits `NotFound` instead of failing.
-
-### Infrastructure/Hosting
-
-`UseHansom(IHostApplicationBuilder, Action<HansomOptions>?)` registers `HansomOptions`, `HandlerCatalog`, `IMessageBus → Mediator`, and `HansomHostedService : IHostedService` as singletons. `HansomOptions.HandlerAssemblies` (`ICollection<Assembly>`) is the opt-in list for handler discovery. The console host starts and stops cleanly with no messages; `HansomHostedService` is the lifecycle hook for future listeners and durability agents (LocalQueues, Persistence plug into its `StartAsync` / `StopAsync`).
-
-Prove-with: `host_with_use_hansom_registers_hansom_hosted_service`, `host_with_use_hansom_registers_message_bus_as_singleton`, `host_starts_and_stops_cleanly_with_no_messages`.
-
-### Infrastructure/LocalQueues
-
-`Mediator.PublishAsync(message)` consults `RoutingCatalog.For(message)` (precedence: registered destination → `[LocalQueue("name")]` attribute → fallback `local://{type.Name.ToLowerInvariant()}/`) and enqueues the envelope to a per-destination `LocalQueueAgent`. The caller returns before the handler runs.
-
-`LocalQueueAgent` (Infrastructure/LocalQueues) — single-queue `Channel<Envelope>` worker with `Start` / `DrainAsync` / `Pause` / `Resume` / `Enqueue`. Invokes handlers via `Executor` with `Scheduled = true`. `Pause`/`Resume` is the circuit-breaker for the queue's listener; `DrainAsync` completes the channel and waits for the worker to finish in-flight envelopes.
-
-`LocalQueueCatalog : IPublishEnqueuer` — `ConcurrentDictionary<string, LocalQueueAgent>` keyed by destination URI; one agent per destination.
-
-`HansomHostedService` starts all agents on `StartAsync` and `DrainAsync` × N on `StopAsync` so the host stops cleanly with no in-flight work dropped. Cascades from untracked `InvokeAsync` route + enqueue through the same path; tracked sessions still record to `Published` and the worklist for tests.
-
-Prove-with: `publish_async_returns_before_handle_runs`, `publish_async_dispatches_through_executor_to_discovered_handler`, `publish_async_routes_via_local_queue_attribute_to_named_queue`, `publish_async_with_no_route_falls_back_to_lowercased_type_name`, `host_stops_drain_in_flight_local_queue_work`, `local_queue_agent_pause_blocks_dispatch_until_resume`, `local_queue_catalog_creates_separate_agents_per_destination`.
-
-### Application/Persistence
-
-Ports for inbox, outbox, dead letter, and the transactional outbox boundary. `IMessageStore` composes the others; `IInboxStore` / `IOutboxStore` / `IDeadLetterStore` are the per-direction surfaces. `IOutboxTransaction` + `TransactionalOutbox` are the dual-write contract: handlers that take a session/connection wrap and flush the outbox in the same commit. The ports are how `Hansom.Postgresql` will plug in later.
-
-Prove-with: `port_contract_*` facts covering each surface in `tests/Hansom.Tests/Application/Persistence/PortContractTests.cs`.
-
-### Infrastructure/Persistence
-
-`InMemoryMessageStore : IMessageStore` — the in-process implementation used until `Hansom.Postgresql` lands. Recovery on `Start`, duplicate-id rejection, and the transactional outbox are exercised against this store first; the ports are the contract, this is the reference.
-
-Prove-with: `in_memory_message_store_durability_*` facts in `tests/Hansom.Tests/Infrastructure/Persistence/InMemoryMessageStoreDurabilityTests.cs` (recover after successful `Start`, throwing `Start` leaves no outgoing row, duplicate `IdempotencyKey` is rejected).
-
-### Application/Serialization
-
-`ISerializer` port for `Envelope` body ↔ bytes. The caller resolves `MessageType` to CLR `Type` via `MessageTypeCatalog` before reaching the serializer; unknown CLR types are handed off to `IMissingHandler` at the Transport layer, not crashed here. Polymorphic payloads and contract versioning are the natural follow-ups once a transport carries discriminators.
-
-Prove-with: `serialize_body_then_deserialize_body_round_trips_to_equivalent_object`, `serialize_then_deserialize_envelope_preserves_headers_and_content_type`, `serialize_body_with_null_body_throws_argument_null_exception` in `tests/Hansom.Tests/Application/Serialization/SerializerContractTests.cs`.
-
-### Infrastructure/Serialization
-
-`JsonSerializer : ISerializer` — `System.Text.Json` implementation. Default content type `application/json`; the caller is responsible for setting `Envelope.ContentType` on the surrounding `Envelope`. Property-name matching is case-insensitive; output is compact. Adapter projects (`Hansom.RabbitMQ`, `Hansom.Http`) will plug their own content-type negotiation on top of this same port.
-
-Prove-with: shared with `Application/Serialization` — the contract tests cover both sides.
-
-## What is left
-
-Folders that are **Plan-only** are listed in a sensible build order. Do one slice at a time; prove it before starting the next.
-
-### Application (the bus)
-
-1. ~~**Discovery**~~ — done. `HandlerCatalog` + `HandlerConvention` find `Handle` / `HandleAsync` / `Start` / `Consume` by convention; `IMissingHandler` and `MissingHandler` cover the no-handler path; `HandlerCatalogValidator` enforces the rule.
-2. ~~**Bus**~~ — done. `IMessageBus` (`InvokeAsync`, `PublishAsync`) + `DeliveryOptions` + `IPublishEnqueuer`; public facade, no threads or sockets. Implementations live in `Mediator` and `LocalQueues`.
-3. ~~**Mediator**~~ — done. `Mediator : IMessageBus` — `InvokeAsync` runs on the caller's thread until `Handle` returns; `PublishAsync` hands off to `IPublishEnqueuer`.
-4. ~~**Cascades**~~ — done. `CascadingMessages` + `ICascadePublisher`; handler return values become outgoing messages after success, and a throwing handler publishes nothing.
-5. ~~**Routing**~~ — done. `RoutingCatalog` maps message type → destination URI (`local://payments/`); the queue implementation is in `Infrastructure/LocalQueues`.
-6. ~~**Execution**~~ — done. `Executor` wraps one handler call: attempts, typed error policy (`ErrorPolicyCatalog`), retry / cooldown / schedule / move-to-error-queue, `IMissingHandler`. Per-attempt hook (`IHandlerAttemptObserver`) feeds Tracking and Observability.
-7. ~~**Tracking**~~ — done. `TrackedSession` records executed / published / scheduled envelopes; `PlayScheduledMessagesAsync` advances scheduled work without `Task.Delay`; `RecordingScheduledEnvelopeHold` is the in-memory test decorator.
-
-### Infrastructure
-
-10. ~~**Hosting**~~ — done. Listeners and durability agents plug into `HansomHostedService` from LocalQueues and Persistence.
-11. ~~**Serialization**~~ — done. `ISerializer` port + `System.Text.Json` impl; polymorphic discriminators and contract versioning are follow-ups once a transport carries them.
-12. ~~**LocalQueues**~~ — done. Bounded back-pressure, queue-invoked handler cascades, and durable mode (this folder + Persistence) are follow-ups.
-13. ~~**Transports**~~ — done. `ITransport` port (`Application/Transports`) + `LocalTransport` (`local://`, `Infrastructure/Transports`); TCP, RabbitMQ, and HTTP wire transports follow in their adapter projects.
-14. ~~**Persistence**~~ — done. Ports (`Application/Persistence`) + in-memory store (`Infrastructure/Persistence`); Npgsql adapter follows in `Hansom.Postgresql`.
-15. ~~**Observability**~~ — done. `HansomDiagnostics` static surface (`ActivitySource`, `Meter`, `hansom.failures` counter) + `ObservabilityAttemptObserver` (per-attempt span + counter on throw); OTel SDK exporters, `ILogger` correlation scopes, in-flight gauge, latency histogram, health checks, `describe-routing`, and redacted envelope logging are follow-ups in this folder.
-
-### Adapters and sample
-
-16. **Hansom.Postgresql** — Marten/Npgsql implementation of persistence ports.
-17. **Hansom.RabbitMQ** — broker transport.
-18. **Hansom.Http** — HTTP front door into the same Execution pipeline.
-19. **Helpdesk sample** — `PlaceOrder` / `ChargePayment` / `OrderSaga` against Hansom, matching `WolverineTest`.
-20. **Tests** — `Hansom.Tests` for domain (naming, catalog lookup, saga identity, envelope rules). `Helpdesk.Tests` for conversations once the bus exists.
-
-## Start in this order
-
-1. `src/Hansom/Domain/Envelope/Envelope.cs` — the unit of work
-2. `src/Hansom/Domain/Messaging/MessageTypeNaming.cs` and `MessageTypeCatalog.cs` — wire names
-3. `src/Hansom/Domain/Sagas/SagaIdentityNaming.cs`, `TimeoutAttribute.cs`, `Saga.cs` — identity and inert state
-4. `src/Hansom/Domain/Envelope/Validators/EnvelopeValidator.cs` — composition, not ownership
-5. Any `*Plan.cs` in Application — the next slices
-6. `samples/Helpdesk/src/Helpdesk.Host/Program.cs` — host glue only
-7. Sibling `WolverineTest` — the finished pipeline this clone is aiming at
+See `AGENTS.md` and `.cursor/rules/` for the full set.
 
 ## Build
 
 ```bash
 dotnet build src/Hansom
-dotnet run --project samples/Helpdesk/src/Helpdesk.Host
 dotnet test
+dotnet run --project samples/Helpdesk/src/Helpdesk.Host
 ```
 
-.NET 10. Tests and the Helpdesk sample compile; they do not exercise a bus yet.
+.NET 10. Targets `net10.0` via `Directory.Build.props`. A `.slnx` exists at the root for `dotnet test`. No CI yet.
 
-## Questions
+## License
 
-Open an answer only after you have a guess. If you can explain it to a rubber duck without opening the answer, you have the idea.
-
-If you already know **MediatR**, **clean architecture**, and **DDD**, several questions are a translation into this codebase. Frontend stack is out of scope here.
-
-### From the code that exists
-
-<details>
-<summary>What is a message in this project, versus a method call?</summary>
-
-A message is a piece of data (a `record` such as `PlaceOrder`) that *might* be handled later, on another thread, after a retry, or after a process restart. Hansom wraps that body in `Message` (`Domain/Messaging/ValueObjects/Message.cs`): the CLR object, not JSON.
-
-A method call is “run this now, on my stack, throw if it fails.” If `OrderSaga.Start` called `ChargePaymentHandler.Handle(...)` directly, you would skip the queue, the retry policy, the inbox, and the chance to load saga state again. Event-driven code decides *what happened* (or what should happen next) and emits a message. It does not reach into the next step.
-
-Helpdesk does not contain those records yet. The types live in Messaging so Envelope can carry a body without owning “what a message is.”
-
-</details>
-
-<details>
-<summary>What is an Envelope, and why isn’t the record enough?</summary>
-
-Your `record` is the body. Hansom’s unit of work is `Envelope`: body plus `EnvelopeId`, `MessageType`, `Destination`, correlation / conversation / saga ids, `SentAt`, `DeliverBy`, `Headers`, `ContentType`, `Attempts`, and `EnvelopeData` (bytes, empty until Serialization).
-
-Retries will reuse the **same** envelope (`Attempts` 1, then 2, then 3). They are not three new publishes. Conversation ids are why a future `TrackActivity` can wait for PlaceOrder + ChargePayment + PaymentCharged as one conversation. The inbox will store envelopes, not bare records, so a restart can continue the same attempt count.
-
-See `src/Hansom/Domain/Envelope/Envelope.cs`.
-
-</details>
-
-<details>
-<summary>Why do Message, MessageType, and SagaId live outside Envelope?</summary>
-
-Envelope **carries** them. Messaging **defines** the wire name. Sagas **defines** instance identity.
-
-If `MessageType` lived only on Envelope, Messaging would import Envelope for its own core idea (`MessageTypeNaming` returns a name). The wrapper would own the contract. After the move, Envelope depends on Messaging and Sagas. Messaging does not depend on Envelope.
-
-`Message` is the CLR body slot. `MessageType` is the stable string on the wire. `SagaId` is which process-manager instance this envelope belongs to (empty if none). Destination, attempts, and bytes stay on Envelope: those are how *this copy* is sent, retried, and stored.
-
-</details>
-
-<details>
-<summary>What does MessageTypeNaming do that the catalog does not?</summary>
-
-`MessageTypeNaming.For(Type)` is a pure function: `[MessageIdentity]` alias if present, otherwise `FullName` (not `Name`, not `AssemblyQualifiedName`). It always has a `Type`, so this direction does not fail.
-
-`MessageTypeCatalog` is the map Discovery will fill. `Register` records every `(Type, MessageType)` pair (collisions stay on the list for the validator). `_byType` is outbound `GetName`. `_byName` is inbound `Lookup`. Two processes that register the same CLR type must agree on the string.
-
-A dictionary cannot hold two types with the same name. That is why the list is the source of truth.
-
-</details>
-
-<details>
-<summary>Why is an unknown wire name a lookup result, not an exception?</summary>
-
-A Rabbit payload or inbox row has a string, not a `Type`. `Lookup` returns `KnownMessageType` or `UnknownMessageType`. SerializationPlan: unknown CLR type is a handled failure handed to Execution / `IMissingHandler`, not a crash in the serializer.
-
-`MessageTypeValidator` only says “not empty, not whitespace.” “We have never registered this name” is Messaging’s job, and it is allowed to fail in a typed way.
-
-</details>
-
-<details>
-<summary>Why FullName, not Name or AssemblyQualifiedName?</summary>
-
-`Name` alone (`PlaceOrder`) collides across namespaces. `AssemblyQualifiedName` includes the assembly version; bumping a package would change the wire name and break every stored envelope and every other process.
-
-`FullName` is stable across versions. `[MessageIdentity("place-order")]` is the override when you rename the class but must keep the contract.
-
-</details>
-
-<details>
-<summary>Why [SagaIdentity] on OrderId? Why not just a property named OrderId?</summary>
-
-`SagaIdentityNaming` looks at **properties on the message**, not `OrderSaga.Id`. Order: `[SagaIdentity]`, then `{SagaType.Name}Id` (`OrderSaga` → `OrderSagaId`), then `Id`.
-
-Helpdesk messages use `OrderId`. The saga class is `OrderSaga`, so the conventional name would be `OrderSagaId`. Without the attribute, `PlaceOrder` would not correlate.
-
-`ChargePayment` also has `OrderId` and **no** `[SagaIdentity]`, no `OrderSagaId`, no `Id`. Naming returns empty `SagaId`. It is not a saga message. Empty means “not this saga,” not an error. `NotFound` is Application later.
-
-Identity is a contract on the message, not a vibe. See `SagaIdentityNaming.For(object, Type)`.
-
-</details>
-
-<details>
-<summary>Why is timeout an attribute, not TimeoutMessage or Task.Delay?</summary>
-
-Wolverine uses `OrderTimeout : TimeoutMessage(1.Minutes())`. Attribute arguments cannot be `TimeSpan`, so Hansom uses `[Timeout(Minutes = 1)]` on the message type: integers, then `Delay` as `TimeSpan`.
-
-The saga class is inert state (`MarkCompleted` / `IsCompleted`). It does not run a timer. Scheduling sets `Envelope.DeliverBy` from `SentAt + Delay` and parks the envelope until `PlayDue`.
-
-`await Task.Delay(1.Minute())` inside `Start` would block a worker, die with the process, and be painful to test. `PlayScheduledMessagesAsync` (planned, Application/Tracking) fast-forwards the timeout without sleeping.
-
-</details>
-
-<details>
-<summary>Why does Saga have no Id? Why is MarkCompleted only a flag?</summary>
-
-`OrderSaga` will declare `public int? Id { get; set; }`. Other sagas will use `Guid` or `string`. An `Id` on the Hansom base would force one CLR type on every saga.
-
-`MarkCompleted()` sets `IsCompleted`. It does not delete a Marten document. Application/Sagas treats the flag as “this instance is finished” (later Handle messages are a unified miss). Persistence will own the durable row. Domain/Sagas is data.
-
-</details>
-
-<details>
-<summary>Why FluentValidation on domain types instead of throwing in constructors?</summary>
-
-Envelope value objects are records. They accept values; validators reject bad combinations (`DeliverBy >= SentAt`, ContentType paired with Data, empty `SagaId` allowed). Messaging does not throw on an unknown name. `[Timeout]` with all zeros fails `TimeoutAttributeValidator`, not the attribute constructor.
-
-Application will run validators at catalog build and at envelope construction. The edge of the bus should see a validation result, not an unhandled `ArgumentException` from a record initializer.
-
-`EnvelopeValidator` composes Messaging and Sagas child validators. Ownership of the rules follows ownership of the types.
-
-</details>
-
-<details>
-<summary>What is a *Plan class? Why empty sealed types with comments?</summary>
-
-Each feature folder’s `*Plan` is the spec for a slice that may not have runtime types yet: **Put here**, **Do not put here**, **Prove with**. Domain, Discovery, Bus, Mediator, Cascades, Execution, Middleware, and Scheduling used to be Plan-only; they now have real types.
-
-The empty `sealed class` exists so the folder is a compilable C# project, not a markdown wiki. Implement against the comments. Do not invent a different split.
-
-</details>
-
-<details>
-<summary>How does this sit with clean architecture (onion) and DDD?</summary>
-
-Inner layers do not depend on outer ones. Domain does not know HTTP or Postgres. Application orchestrates. Infrastructure implements ports. Adapters (`Hansom.Postgresql`, `.RabbitMQ`, `.Http`) are separate projects so core cannot take those package references.
-
-- **Messages** are the language of the domain. They are not a controller DTO and not a SQL row.
-- **Handlers / saga methods** (planned in Helpdesk.Application) are use cases. `OrderSaga.Start` must not new up `ChargePaymentHandler`.
-- **Helpdesk.Host** is the composition root. Helpdesk.Domain must not reference Hansom.
-
-A **saga is a process manager**, not an aggregate. Hansom’s `Saga` does not enforce “an order’s line items.” It tracks “this instance is open until something calls `MarkCompleted`.” The timeout is a message in time, not a `DateTime` field you poll.
-
-This repo is not a full domain model with repositories. The lesson is the messaging shape that DDD + onion usually want, plus a bus you own one folder at a time.
-
-</details>
-
-### The bus that is not built yet (planned)
-
-<details>
-<summary>(planned) Invoke vs Publish — what is the difference?</summary>
-
-Both will end up in Execution (envelope, handler, error policy, cascades). They differ in **when the caller continues**. See `Application/Bus/IMessageBus.cs` and `Application/Mediator/Mediator.cs`.
-
-**`InvokeAsync`** is a function call through the bus. `await` does not finish until that handler returns. Retry-now / retry-with-cooldown happen inside that await. There is no queue in front of the caller. Use Invoke when the current request cannot continue until *this* handler has finished.
-
-**`PublishAsync`** is “accept this envelope and let go.” Routing runs, the message lands on a local queue, and the caller is done.
-
-Rule of thumb: **Invoke = I need this handler done before I continue. Publish = I need this work to happen, not necessarily here or now.**
-
-`IMessageBus` does not own threads or sockets. Mediator vs Routing/LocalQueues implement the difference.
-
-</details>
-
-<details>
-<summary>(planned) How does this compare to MediatR?</summary>
-
-**`InvokeAsync` is MediatR’s `Send`.** One message in, handler runs now, caller waits. Hansom will find `Handle(PlaceOrder)` by convention (`Application/Discovery`) instead of `IRequestHandler<PlaceOrder>`.
-
-**`PublishAsync` is not MediatR.** The work can retry, land on another thread, or survive a restart. MediatR `INotification` still is not a queue, an outbox, or a saga.
-
-The trap is to `InvokeAsync` the next step from inside a handler (`IMediator.Send` the next command). That keeps you on one stack, with stale saga state, and no outbox. Return `ChargePayment` and let the bus load `OrderSaga` again (`Application/Cascades`).
-
-| You know | In Hansom (planned) |
-| --- | --- |
-| `IMediator.Send` / `IRequestHandler<T>` | `InvokeAsync` |
-| `IMediator.Publish` / `INotification` | still in-process; not a durable queue |
-| “controller calls the next handler” | cascade a message instead |
-| One handler, one HTTP request | `PlaceOrder` starts a conversation that outlives the call |
-
-</details>
-
-<details>
-<summary>(planned) Why do cascading messages wait for the handler to succeed?</summary>
-
-A cascade is a return value the bus will publish **after** the current handler succeeds. `OrderSaga.Start` will return `(saga, OrderTimeout, ChargePayment)`. That is not a call to the payment handler.
-
-If the handler throws, nothing is emitted. That is the in-memory **outbox** (`Application/Cascades`). Durable outbox is the same rule persisted (`Infrastructure/Persistence`). Do not `InvokeAsync` the next saga step from inside a saga handler.
-
-Prove-with: a throwing handler publishes nothing; a succeeding handler publishes exactly its return values, after it returns. See `CascadingMessages` and `ICascadePublisher`.
-
-</details>
-
-<details>
-<summary>(planned) Why does the outbox exist? How is that different from the inbox?</summary>
-
-The dual-write bug is: write business state, then publish, and crash between the two. Or publish, then fail to save.
-
-**Outbox:** outgoing envelopes are rows in the same transaction as the saga. Crash after commit and the envelope is still there.
-
-**Inbox:** write the incoming envelope *before* the handler runs; mark handled only after success. Kill the host mid-retry and the same envelope is recovered.
-
-Outbox: I will not forget work I decided to emit. Inbox: I will not forget work that arrived. Ports live in `Infrastructure/Persistence`; Npgsql in `Hansom.Postgresql`.
-
-</details>
-
-<details>
-<summary>(planned) What is a local queue? Why named payments?</summary>
-
-With no RabbitMQ, the bus still has queues: in-process workers. Routing (`Application/Routing`) maps `ChargePayment` → `local://payments/`. LocalQueues (`Infrastructure/LocalQueues`) obey that destination. A worker runs the handler off the caller’s thread.
-
-Routing is a table of rules, not a switch inside each handler. The TPL Dataflow block is Infrastructure. `ChargePayment` should get `local://payments/` without the saga naming a queue in `Start`.
-
-</details>
-
-<details>
-<summary>(planned) Why configure retry on the handler instead of a for-loop?</summary>
-
-Execution (`Application/Execution`) wraps one handler call: attempts, retry / retry-with-cooldown / requeue / dead-letter, by exception type and/or message type. `InvokeAsync` only applies retry and retry-with-cooldown (match Wolverine).
-
-A `for` loop inside the handler would block one worker, mix “call the gateway” with “how we recover,” and skip dead-letter as a first-class outcome. The policy lives on the chain so every `ChargePayment` gets the same recovery, including inbox recovery after a restart.
-
-The same `Envelope` comes back with `Attempts` 1, 2, 3; then error-queue if the policy says so.
-
-</details>
-
-<details>
-<summary>What is a saga doing that a chain of cascades does not?</summary>
-
-Cascades are “after this handler succeeds, emit these messages.” There is no state sitting around between them except whatever you put in the message bodies.
-
-A **saga** is state that lives across several messages for one business process: “order 1 is open until paid or until it times out.” Domain has identity and `MarkCompleted`. Application/Sagas loads by id, runs `Start` / `Handle` / `NotFound`. Persistence will store the durable row.
-
-Without a saga you could still cascade `ChargePayment`, but you would have nowhere honest to put “this order is still waiting.”
-
-</details>
-
-<details>
-<summary>Why does NotFound exist? Isn’t that just an error?</summary>
-
-After payment, `MarkCompleted()` finishes the saga. The timeout scheduled at start is **not cancelled**. A minute later it still arrives.
-
-If there is no `NotFound(OrderTimeout)`, “saga 1 is gone” is a failure. `NotFound` means “this message is harmless because the other path already finished.” Same for `PaymentCharged` if the timeout already won.
-
-That is normal in EDA: you design for messages that show up late, twice, or after the process is over. Prove-with: after complete, timeout hits `NotFound` instead of failing.
-
-</details>
-
-<details>
-<summary>Why is there no PlaceOrderHandler?</summary>
-
-Once `OrderSaga.Start(PlaceOrder)` is wired with a real saga identity, `PlaceOrder` is the saga’s start message. A separate `Handle(PlaceOrder)` on the same saga type is invalid at Scan.
-
-`Start` is the PlaceOrder handler. It cascades `ChargePayment` and the timeout message. One message in, one place that decides the next work. Discovery treats `Start` as a handler convention.
-
-</details>
-
-<details>
-<summary>What is this repo deliberately not doing yet?</summary>
-
-No running bus, no RabbitMQ, no HTTP, no Postgres inbox. Helpdesk.Host only calls `UseHansom()` and starts/stops. There are no Hansom.Tests for Envelope, Messaging, or Sagas yet.
-
-The next slices are Application/Discovery through Tracking, then Serialization, LocalQueues, Persistence. External transport and HTTP come after the in-process conversation works. Until then, `WolverineTest` is the finished sample of the pipeline Hansom is cloning.
-
-</details>
+[MIT](LICENSE).
