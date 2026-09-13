@@ -21,7 +21,14 @@
   <ItemGroup>
     <ProjectReference Include="..\..\samples\Helpdesk\src\Helpdesk.Host\Helpdesk.Host.csproj" />
     <ProjectReference Include="..\..\samples\Helpdesk\src\Helpdesk.Application\Helpdesk.Application.csproj" />
+    <ProjectReference Include="..\..\samples\Helpdesk\src\Helpdesk.Infrastructure\Helpdesk.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Hansom\Hansom.csproj" />
+    <ProjectReference Include="..\..\src\Hansom.Postgresql\Hansom.Postgresql.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.15.0" />
   </ItemGroup>
 
 </Project>
