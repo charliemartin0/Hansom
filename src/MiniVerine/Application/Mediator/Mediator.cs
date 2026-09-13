@@ -73,7 +73,10 @@ public sealed class Mediator : IMessageBus
             routing: _routing,
             onImmediate: OnImmediate,
             cascades: cascades);
-        _scheduler = new MessageScheduler(_delivery, scheduled);
+        _scheduler = new MessageScheduler(
+            scheduled,
+            (envelope, cancellationToken) =>
+                DispatchHandlers(envelope, scheduled: true, cancellationToken));
     }
 
     public Task InvokeAsync(object message, CancellationToken cancellationToken = default) =>
