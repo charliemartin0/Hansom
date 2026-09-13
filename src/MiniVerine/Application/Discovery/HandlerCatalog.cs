@@ -1,4 +1,5 @@
 using System.Reflection;
+using MiniVerine.Application.Execution;
 using MiniVerine.Domain.Messaging;
 using MiniVerine.Domain.Sagas;
 
@@ -61,7 +62,7 @@ public sealed class HandlerCatalog
                     continue;
                 }
 
-                discovered.Add(handler);
+                discovered.Add(handler with { CachedInvoker = HandlerInvokerCompiler.Compile(handler) });
             }
 
             if (IsSagaHandlerType(handlerType))

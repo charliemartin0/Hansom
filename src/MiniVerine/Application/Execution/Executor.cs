@@ -204,21 +204,9 @@ public sealed class Executor
         DiscoveredHandler handler,
         CancellationToken cancellationToken)
     {
-        object? target = handler.IsStatic
-            ? null
-            : handler.ResolveTarget is { } resolve
-                ? resolve()
-                : Activator.CreateInstance(handler.HandlerType);
-        object? result;
-        try
-        {
-            result = handler.Method.Invoke(target, BindArguments(envelope, handler, cancellationToken));
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException is not null)
-        {
-            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
-            throw;
-        }
+        object? result = handler.CachedInvoker is { } invoker
+            ? invoker(ResolveTarget(handler), envelope.Message.Value, envelope, cancellationToken)
+            : InvokeByReflection(handler, envelope, cancellationToken);
 
         if (result is Task task)
         {
@@ -226,6 +214,34 @@ public sealed class Executor
         }
 
         return result;
+    }
+
+    private static object? ResolveTarget(DiscoveredHandler handler) =>
+        handler.IsStatic ? null : handler.ResolveTarget?.Invoke();
+
+    /// <summary>
+    /// Fallback for handlers built at runtime without a compiled invoker (the saga
+    /// NotFound miss path). Not the hot path.
+    /// </summary>
+    private static object? InvokeByReflection(
+        DiscoveredHandler handler,
+        Envelope envelope,
+        CancellationToken cancellationToken)
+    {
+        object? target = handler.IsStatic
+            ? null
+            : handler.ResolveTarget is { } resolve
+                ? resolve()
+                : Activator.CreateInstance(handler.HandlerType);
+        try
+        {
+            return handler.Method.Invoke(target, BindArguments(envelope, handler, cancellationToken));
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            throw;
+        }
     }
 
     private static object?[] BindArguments(
